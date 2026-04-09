@@ -3,8 +3,8 @@ import sys
 import subprocess
 from pathlib import Path
 
-from tools.logger import get_logger
-from tools.update import SelfUpdater
+from toolsupdate.logger import get_logger
+from toolsupdate.update import SelfUpdater
 
 log = get_logger("AI_BOOTSTRAP")
 
