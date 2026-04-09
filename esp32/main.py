@@ -1,248 +1,72 @@
-import network
-import time
-from machine import Pin
 from umqtt.simple import MQTTClient
 import ujson
-import machine
+import time
 
-# =============================
-# CONFIGURATION
-# =============================
+from config import MQTT_BROKER, NODE_ID
+from worker import run_task
 
-SSID = "Ap"
-PASSWORD = "1234567891"
+client = None
 
-BROKER = "192.168.250.4"
-
-CLIENT_ID = "node1"
-
-LED_PIN = 2
-
-HEARTBEAT_INTERVAL = 5000
-
-# =============================
-# HARDWARE
-# =============================
-
-LED = Pin(LED_PIN, Pin.OUT)
-
-def led_on():
-    LED.value(1)
-
-def led_off():
-    LED.value(0)
-
-def blink(times=1, delay=0.2):
-
-    for _ in range(times):
-
-        LED.value(1)
-        time.sleep(delay)
-
-        LED.value(0)
-        time.sleep(delay)
-
-def heartbeat_led():
-
-    LED.value(1)
-    time.sleep(0.05)
-
-    LED.value(0)
-
-# =============================
-# WIFI
-# =============================
-
-def connect_wifi():
-
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
-
-    print("Connecting WiFi...")
-
-    wlan.connect(SSID, PASSWORD)
-
-    timeout = 20
-
-    while not wlan.isconnected():
-
-        print("Status:", wlan.status())
-
-        LED.value(1)
-        time.sleep(0.3)
-
-        LED.value(0)
-        time.sleep(0.3)
-
-        timeout -= 1
-
-        if timeout <= 0:
-
-            print("WiFi FAILED")
-
-            return False
-
-    print("Connected:", wlan.ifconfig())
-
-    led_on()
-
-    return True
-
-# =============================
-# MACHINE LEARNING
-# =============================
-
-def train_linear(data):
-
-    x = data["x"]
-    y = data["y"]
-
-    a = data["a"]
-    b = data["b"]
-
-    # prediction
-
-    y_pred = a * x + b
-
-    error = y_pred - y
-
-    grad_a = error * x
-    grad_b = error
-
-    return {
-
-        "grad_a": grad_a,
-        "grad_b": grad_b
-
-    }
-
-# =============================
-# COMMAND EXECUTION
-# =============================
-
-def execute_command(cmd, value):
-
-    if cmd == "square":
-
-        return value * value
-
-    if cmd == "double":
-
-        return value * 2
-
-    if cmd == "train":
-
-        return train_linear(value)
-
-    if cmd == "led_on":
-
-        led_on()
-        return "LED ON"
-
-    if cmd == "led_off":
-
-        led_off()
-        return "LED OFF"
-
-    return "unknown command"
-
-# =============================
-# TASK PROCESSING
-# =============================
-
-def process_task(data):
-
-    task_id = data["task_id"]
-
-    command = data["command"]
-
-    value = data.get("value", {})
-
-    result = execute_command(command, value)
-
-    response = {
-
-        "node": CLIENT_ID,
-        "task_id": task_id,
-        "result": result,
-        "status": "done"
-
-    }
-
-    return response
-
-# =============================
-# MQTT CALLBACK
-# =============================
 
 def on_message(topic, msg):
 
-    print("Task received:", msg)
+    topic = topic.decode()
 
-    blink(1)
+    if topic == "cluster/task/" + NODE_ID:
 
-    data = ujson.loads(msg)
+        print("Task received")
 
-    response = process_task(data)
+        data = ujson.loads(msg)
 
-    client.publish(
-        "node/result",
-        ujson.dumps(response)
-    )
+        result = run_task(data)
 
-# =============================
-# HEARTBEAT
-# =============================
+        send_result(result)
 
-def send_status():
 
-    status = {
+def send_result(result):
 
-        "node": CLIENT_ID,
-        "status": "alive",
-        "uptime_ms": time.ticks_ms()
+    topic = "cluster/result/" + NODE_ID
 
-    }
+    payload = ujson.dumps({
 
-    client.publish(
-        "node/status",
-        ujson.dumps(status)
-    )
+        "node": NODE_ID,
+        "result": result
 
-    heartbeat_led()
+    })
 
-# =============================
-# MAIN
-# =============================
+    client.publish(topic, payload)
 
-if not connect_wifi():
 
-    print("Restarting...")
+def register_node():
 
-    time.sleep(5)
+    payload = ujson.dumps({
 
-    machine.reset()
+        "node": NODE_ID,
+        "status": "online"
 
-print("Connecting MQTT...")
+    })
 
-client = MQTTClient(
-    CLIENT_ID,
-    BROKER
-)
+    client.publish("cluster/register", payload)
 
-client.set_callback(on_message)
 
-client.connect()
+def connect():
 
-print("MQTT connected")
+    global client
 
-blink(2)
+    client = MQTTClient(NODE_ID, MQTT_BROKER)
 
-client.subscribe("node/task")
+    client.set_callback(on_message)
 
-print("Waiting task...")
+    client.connect()
 
-last_heartbeat = time.ticks_ms()
+    client.subscribe("cluster/task/" + NODE_ID)
+
+    print("MQTT connected")
+
+    register_node()
+
+
+connect()
 
 while True:
 
@@ -250,25 +74,8 @@ while True:
 
         client.check_msg()
 
-        now = time.ticks_ms()
-
-        if time.ticks_diff(
-            now,
-            last_heartbeat
-        ) > HEARTBEAT_INTERVAL:
-
-            send_status()
-
-            last_heartbeat = now
-
         time.sleep(0.1)
 
-    except Exception as e:
+    except:
 
-        print("Error:", e)
-
-        blink(5)
-
-        time.sleep(2)
-
-        machine.reset()
+        connect()
