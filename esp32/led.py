@@ -16,6 +16,12 @@ STATE_ERROR = "error"
 STATE_READY = "ready"
 
 
+PERIOD_WIFI = 500
+PERIOD_OTA = 100
+PERIOD_RUNNING = 1000
+PERIOD_ERROR = 2000
+PERIOD_READY = 1500
+
 
 # =========================
 # INTERNAL
@@ -58,7 +64,10 @@ def _toggle(timer):
 
 def stop():
 
-    _timer.deinit()
+    try:
+        _timer.deinit()
+    except:
+        pass
 
     if _led:
 
@@ -83,7 +92,10 @@ def set_state(new_state):
 
     _state = new_state
 
-    _timer.deinit()
+    try:
+        _timer.deinit()
+    except:
+        pass
 
     if new_state == STATE_IDLE:
 
@@ -96,7 +108,7 @@ def set_state(new_state):
     elif new_state == STATE_WIFI:
 
         _timer.init(
-            period=500,
+            period=PERIOD_WIFI,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
@@ -104,7 +116,7 @@ def set_state(new_state):
     elif new_state == STATE_OTA:
 
         _timer.init(
-            period=100,
+            period=PERIOD_OTA,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
@@ -112,7 +124,7 @@ def set_state(new_state):
     elif new_state == STATE_RUNNING:
 
         _timer.init(
-            period=1000,
+            period=PERIOD_RUNNING,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
@@ -120,17 +132,18 @@ def set_state(new_state):
     elif new_state == STATE_ERROR:
 
         _timer.init(
-            period=2000,
+            period=PERIOD_ERROR,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
+
     elif new_state == STATE_READY:
 
-    _timer.init(
-        period=1500,
-        mode=Timer.PERIODIC,
-        callback=_toggle
-    )
+        _timer.init(
+            period=PERIOD_READY,
+            mode=Timer.PERIODIC,
+            callback=_toggle
+        )
 
     else:
 
