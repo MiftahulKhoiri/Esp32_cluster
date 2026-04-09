@@ -24,6 +24,9 @@ running_tasks = {}
 completed_tasks = {}
 
 
+TASK_TIMEOUT = 30
+
+
 # =========================
 # TASK MANAGEMENT
 # =========================
@@ -33,6 +36,8 @@ def add_task(task):
     task_id = str(uuid.uuid4())
 
     task["task_id"] = task_id
+
+    task["created"] = time.time()
 
     pending_tasks.append(task)
 
@@ -44,7 +49,6 @@ def add_task(task):
 def get_next_task():
 
     if not pending_tasks:
-
         return None
 
     return pending_tasks.pop(0)
@@ -58,21 +62,53 @@ def mark_running(task_id):
 
     }
 
+    print("Task running:", task_id)
+
 
 def mark_completed(task_id, status):
 
     if task_id in running_tasks:
 
-        completed_tasks[task_id] = status
+        completed_tasks[task_id] = {
+
+            "status": status,
+            "finished": time.time()
+        }
 
         del running_tasks[task_id]
 
         print(
-
             "Task completed:",
             task_id,
             status
+        )
 
+
+# =========================
+# TIMEOUT MONITOR
+# =========================
+
+def check_timeouts():
+
+    now = time.time()
+
+    expired = []
+
+    for task_id, info in running_tasks.items():
+
+        start = info["start_time"]
+
+        if now - start > TASK_TIMEOUT:
+
+            expired.append(task_id)
+
+    for task_id in expired:
+
+        print("Task timeout:", task_id)
+
+        mark_completed(
+            task_id,
+            "timeout"
         )
 
 
@@ -97,7 +133,15 @@ def on_message(client, userdata, msg):
 
     topic = msg.topic
 
-    payload = json.loads(msg.payload)
+    try:
+
+        payload = json.loads(msg.payload)
+
+    except Exception as e:
+
+        print("JSON error:", e)
+
+        return
 
     # ---------------------
     # NODE STATUS
@@ -105,9 +149,12 @@ def on_message(client, userdata, msg):
 
     if topic.startswith("cluster/status"):
 
-        node = payload["node"]
+        node = payload.get("node")
 
-        status = payload["status"]
+        status = payload.get("status")
+
+        if not node:
+            return
 
         if status == "ready":
 
@@ -127,16 +174,17 @@ def on_message(client, userdata, msg):
 
     if topic.startswith("cluster/task_status"):
 
-        task_id = payload["task_id"]
+        task_id = payload.get("task_id")
 
-        status = payload["status"]
+        status = payload.get("status")
+
+        if not task_id:
+            return
 
         print(
-
             "Task status:",
             task_id,
             status
-
         )
 
         if status == "running":
@@ -190,38 +238,54 @@ add_task(DEFAULT_TASK.copy())
 
 
 # =========================
+# DISPATCH TASK
+# =========================
+
+def dispatch_task():
+
+    if not ready_nodes:
+        return
+
+    task = get_next_task()
+
+    if not task:
+        return
+
+    node = list(ready_nodes)[0]
+
+    topic = "cluster/task/" + node
+
+    try:
+
+        client.publish(
+            topic,
+            json.dumps(task)
+        )
+
+        print(
+            "Task sent to",
+            node,
+            task["task_id"]
+        )
+
+        ready_nodes.discard(node)
+
+    except Exception as e:
+
+        print("Publish failed:", e)
+
+        pending_tasks.insert(0, task)
+
+
+# =========================
 # MAIN LOOP
 # =========================
 
 while True:
 
-    if ready_nodes:
+    dispatch_task()
 
-        node = list(ready_nodes)[0]
-
-        task = get_next_task()
-
-        if task:
-
-            topic = "cluster/task/" + node
-
-            client.publish(
-
-                topic,
-
-                json.dumps(task)
-
-            )
-
-            print(
-
-                "Task sent to",
-                node,
-                task["task_id"]
-
-            )
-
-            ready_nodes.discard(node)
+    check_timeouts()
 
     time.sleep(
         TASK_DISPATCH_INTERVAL
