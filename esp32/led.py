@@ -13,6 +13,8 @@ STATE_OTA = "ota_updating"
 STATE_MQTT = "mqtt_connected"
 STATE_RUNNING = "running"
 STATE_ERROR = "error"
+STATE_READY = "ready"
+
 
 
 # =========================
@@ -122,6 +124,13 @@ def set_state(new_state):
             mode=Timer.PERIODIC,
             callback=_toggle
         )
+    elif new_state == STATE_READY:
+
+    _timer.init(
+        period=1500,
+        mode=Timer.PERIODIC,
+        callback=_toggle
+    )
 
     else:
 
