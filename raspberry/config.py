@@ -1,1 +1,3 @@
 MQTT_BROKER = "localhost"
+
+TASK_INTERVAL = 1
