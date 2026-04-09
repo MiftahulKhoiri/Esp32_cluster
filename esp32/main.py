@@ -25,6 +25,35 @@ client = None
 
 
 # =========================
+# TASK STATUS (ACK)
+# =========================
+
+def send_task_status(task_id, status):
+
+    try:
+
+        payload = ujson.dumps({
+
+            "node": NODE_ID,
+            "task_id": task_id,
+            "status": status,
+            "timestamp": time.time()
+
+        })
+
+        topic = "cluster/task_status/" + NODE_ID
+
+        client.publish(
+            topic,
+            payload
+        )
+
+    except Exception as e:
+
+        print("Task status error:", e)
+
+
+# =========================
 # READY STATE
 # =========================
 
@@ -70,14 +99,47 @@ def on_message(topic, msg):
 
             print("Task received")
 
-            if LED_AVAILABLE:
-                led.set_state(led.STATE_RUNNING)
-
             data = ujson.loads(msg)
+
+            task_id = data.get(
+                "task_id",
+                "unknown"
+            )
+
+            # ACK: RECEIVED
+
+            send_task_status(
+                task_id,
+                "received"
+            )
+
+            if LED_AVAILABLE:
+                led.set_state(
+                    led.STATE_RUNNING
+                )
+
+            # ACK: RUNNING
+
+            send_task_status(
+                task_id,
+                "running"
+            )
 
             result = run_task(data)
 
             send_result(result)
+
+            # ACK: FINAL STATUS
+
+            final_status = result.get(
+                "status",
+                "done"
+            )
+
+            send_task_status(
+                task_id,
+                final_status
+            )
 
             # kembali standby
 
@@ -87,8 +149,15 @@ def on_message(topic, msg):
 
         print("Task error:", e)
 
+        send_task_status(
+            "unknown",
+            "error"
+        )
+
         if LED_AVAILABLE:
-            led.set_state(led.STATE_ERROR)
+            led.set_state(
+                led.STATE_ERROR
+            )
 
 
 # =========================
@@ -149,7 +218,9 @@ def connect_mqtt():
             print("Connecting MQTT...")
 
             if LED_AVAILABLE:
-                led.set_state(led.STATE_WIFI)
+                led.set_state(
+                    led.STATE_WIFI
+                )
 
             if client:
 
@@ -195,8 +266,6 @@ def connect_mqtt():
 
             register_node()
 
-            # masuk standby
-
             set_ready_state()
 
             return
@@ -206,7 +275,9 @@ def connect_mqtt():
             print("MQTT connect failed:", e)
 
             if LED_AVAILABLE:
-                led.set_state(led.STATE_ERROR)
+                led.set_state(
+                    led.STATE_ERROR
+                )
 
             time.sleep(5)
 
@@ -259,7 +330,9 @@ def main():
     print("Booting node:", NODE_ID)
 
     if LED_AVAILABLE:
-        led.set_state(led.STATE_WIFI)
+        led.set_state(
+            led.STATE_WIFI
+        )
 
     # 1) CONNECT WIFI
 
@@ -298,7 +371,9 @@ def main():
             print("MQTT error:", e)
 
             if LED_AVAILABLE:
-                led.set_state(led.STATE_ERROR)
+                led.set_state(
+                    led.STATE_ERROR
+                )
 
             time.sleep(2)
 
