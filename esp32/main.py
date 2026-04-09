@@ -68,6 +68,7 @@ def connect():
     register_node()
 
 connect_wifi()
+ota.perform_update()
 connect()
 
 while True:
