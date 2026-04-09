@@ -4,6 +4,7 @@ import time
 
 from config import MQTT_BROKER, NODE_ID
 from worker import run_task
+from connectionwifi import connect_wifi
 
 client = None
 
@@ -65,7 +66,7 @@ def connect():
 
     register_node()
 
-
+connect_wifi()
 connect()
 
 while True:
