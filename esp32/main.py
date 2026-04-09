@@ -4,9 +4,22 @@ import time
 import machine
 
 from config import MQTT_BROKER, NODE_ID
+
 from worker import run_task
-from connectionwifi import connect_wifi
+
+from connectionwifi import (
+    connect_wifi,
+    ensure_connection
+)
+
 import ota
+
+try:
+    import led
+    LED_AVAILABLE = True
+except:
+    LED_AVAILABLE = False
+
 
 client = None
 
@@ -25,15 +38,24 @@ def on_message(topic, msg):
 
             print("Task received")
 
+            if LED_AVAILABLE:
+                led.set_state(led.STATE_RUNNING)
+
             data = ujson.loads(msg)
 
             result = run_task(data)
 
             send_result(result)
 
+            if LED_AVAILABLE:
+                led.set_state(led.STATE_MQTT)
+
     except Exception as e:
 
         print("Task error:", e)
+
+        if LED_AVAILABLE:
+            led.set_state(led.STATE_ERROR)
 
 
 # =========================
@@ -73,7 +95,10 @@ def register_node():
 
     })
 
-    client.publish("cluster/register", payload)
+    client.publish(
+        "cluster/register",
+        payload
+    )
 
 
 # =========================
@@ -90,10 +115,37 @@ def connect_mqtt():
 
             print("Connecting MQTT...")
 
+            if LED_AVAILABLE:
+                led.set_state(led.STATE_WIFI)
+
+            # cleanup old client
+
+            if client:
+
+                try:
+                    client.disconnect()
+                except:
+                    pass
+
             client = MQTTClient(
                 client_id=NODE_ID,
                 server=MQTT_BROKER,
                 keepalive=60
+            )
+
+            # Last Will (offline detection)
+
+            client.set_last_will(
+
+                topic="cluster/status/" + NODE_ID,
+
+                msg=ujson.dumps({
+                    "node": NODE_ID,
+                    "status": "offline"
+                }),
+
+                retain=False
+
             )
 
             client.set_callback(on_message)
@@ -106,6 +158,9 @@ def connect_mqtt():
 
             print("MQTT connected")
 
+            if LED_AVAILABLE:
+                led.set_state(led.STATE_MQTT)
+
             register_node()
 
             return
@@ -114,7 +169,49 @@ def connect_mqtt():
 
             print("MQTT connect failed:", e)
 
+            if LED_AVAILABLE:
+                led.set_state(led.STATE_ERROR)
+
             time.sleep(5)
+
+
+# =========================
+# HEARTBEAT
+# =========================
+
+last_heartbeat = 0
+
+def send_heartbeat():
+
+    global last_heartbeat
+
+    now = time.time()
+
+    if now - last_heartbeat < 30:
+        return
+
+    last_heartbeat = now
+
+    try:
+
+        payload = ujson.dumps({
+
+            "node": NODE_ID,
+            "status": "online"
+
+        })
+
+        client.publish(
+
+            "cluster/status/" + NODE_ID,
+
+            payload
+
+        )
+
+    except:
+
+        pass
 
 
 # =========================
@@ -124,6 +221,9 @@ def connect_mqtt():
 def main():
 
     print("Booting node:", NODE_ID)
+
+    if LED_AVAILABLE:
+        led.set_state(led.STATE_WIFI)
 
     # 1) CONNECT WIFI
 
@@ -151,11 +251,24 @@ def main():
 
         try:
 
+            # ensure WiFi alive
+
+            ensure_connection()
+
+            # check message
+
             client.check_msg()
+
+            # heartbeat
+
+            send_heartbeat()
 
         except Exception as e:
 
             print("MQTT error:", e)
+
+            if LED_AVAILABLE:
+                led.set_state(led.STATE_ERROR)
 
             time.sleep(2)
 
