@@ -1,29 +1,123 @@
 import network
 import time
+
 from config import WIFI_SSID, WIFI_PASSWORD
-import ota
+
+try:
+    import led
+    LED_AVAILABLE = True
+except:
+    LED_AVAILABLE = False
 
 
+# =========================
+# GET WLAN INSTANCE
+# =========================
 
-def connect_wifi():
+def get_wlan():
+
     wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
 
-    if not wlan.isconnected():
+    if not wlan.active():
+        wlan.active(True)
+
+    return wlan
+
+
+# =========================
+# CONNECT WIFI
+# =========================
+
+def connect_wifi(timeout=20, retry=True):
+
+    wlan = get_wlan()
+
+    if wlan.isconnected():
+
+        print("WiFi already connected")
+
+        return True
+
+    while True:
+
         print("Connecting WiFi...")
-        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
 
-        timeout = 0
+        if LED_AVAILABLE:
+            led.set_state("wifi_connecting")
+
+        wlan.connect(
+            WIFI_SSID,
+            WIFI_PASSWORD
+        )
+
+        start = time.time()
+
         while not wlan.isconnected():
+
             time.sleep(1)
-            timeout += 1
 
-            if timeout > 20:
-                print("WiFi failed")
-                return
+            if time.time() - start > timeout:
 
-    print("WiFi connected")
-    print(wlan.ifconfig())
+                print("WiFi timeout")
 
-connect_wifi()
-ota.perform_update()
+                break
+
+        if wlan.isconnected():
+
+            print("WiFi connected")
+
+            print("IP:", wlan.ifconfig()[0])
+
+            return True
+
+        if not retry:
+
+            print("WiFi failed")
+
+            if LED_AVAILABLE:
+                led.set_state("error")
+
+            return False
+
+        print("Retrying WiFi in 5 sec...")
+
+        time.sleep(5)
+
+
+# =========================
+# CHECK WIFI CONNECTION
+# =========================
+
+def is_connected():
+
+    wlan = get_wlan()
+
+    return wlan.isconnected()
+
+
+# =========================
+# AUTO RECONNECT
+# =========================
+
+def ensure_connection():
+
+    if not is_connected():
+
+        print("WiFi lost")
+
+        connect_wifi()
+
+
+# =========================
+# DISCONNECT
+# =========================
+
+def disconnect():
+
+    wlan = get_wlan()
+
+    if wlan.isconnected():
+
+        wlan.disconnect()
+
+        print("WiFi disconnected")
