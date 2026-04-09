@@ -25,6 +25,38 @@ client = None
 
 
 # =========================
+# READY STATE
+# =========================
+
+def set_ready_state():
+
+    try:
+
+        payload = ujson.dumps({
+
+            "node": NODE_ID,
+            "status": "ready"
+
+        })
+
+        client.publish(
+
+            "cluster/status/" + NODE_ID,
+            payload
+
+        )
+
+        if LED_AVAILABLE:
+            led.set_state(led.STATE_READY)
+
+        print("Node READY")
+
+    except Exception as e:
+
+        print("Ready state error:", e)
+
+
+# =========================
 # MESSAGE HANDLER
 # =========================
 
@@ -47,8 +79,9 @@ def on_message(topic, msg):
 
             send_result(result)
 
-            if LED_AVAILABLE:
-                led.set_state(led.STATE_MQTT)
+            # kembali standby
+
+            set_ready_state()
 
     except Exception as e:
 
@@ -118,8 +151,6 @@ def connect_mqtt():
             if LED_AVAILABLE:
                 led.set_state(led.STATE_WIFI)
 
-            # cleanup old client
-
             if client:
 
                 try:
@@ -128,12 +159,14 @@ def connect_mqtt():
                     pass
 
             client = MQTTClient(
+
                 client_id=NODE_ID,
                 server=MQTT_BROKER,
                 keepalive=60
+
             )
 
-            # Last Will (offline detection)
+            # Last Will
 
             client.set_last_will(
 
@@ -153,15 +186,18 @@ def connect_mqtt():
             client.connect()
 
             client.subscribe(
+
                 "cluster/task/" + NODE_ID
+
             )
 
             print("MQTT connected")
 
-            if LED_AVAILABLE:
-                led.set_state(led.STATE_MQTT)
-
             register_node()
+
+            # masuk standby
+
+            set_ready_state()
 
             return
 
@@ -251,15 +287,9 @@ def main():
 
         try:
 
-            # ensure WiFi alive
-
             ensure_connection()
 
-            # check message
-
             client.check_msg()
-
-            # heartbeat
 
             send_heartbeat()
 
