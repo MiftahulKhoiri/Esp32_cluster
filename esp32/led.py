@@ -1,63 +1,128 @@
 from machine import Pin, Timer
 
-LED_PIN = 2  # default ESP32 onboard LED
 
-led = Pin(LED_PIN, Pin.OUT)
+# =========================
+# CONFIG
+# =========================
 
-timer = Timer(0)
+LED_PIN = 2
 
-state = "idle"
+STATE_IDLE = "idle"
+STATE_WIFI = "wifi_connecting"
+STATE_OTA = "ota_updating"
+STATE_MQTT = "mqtt_connected"
+STATE_RUNNING = "running"
+STATE_ERROR = "error"
 
+
+# =========================
+# INTERNAL
+# =========================
+
+_led = None
+
+_timer = Timer(-1)
+
+_state = STATE_IDLE
+
+
+# =========================
+# INIT
+# =========================
+
+def init(pin=LED_PIN):
+
+    global _led
+
+    _led = Pin(pin, Pin.OUT)
+
+    _led.value(0)
+
+
+# =========================
+# TOGGLE
+# =========================
 
 def _toggle(timer):
 
-    led.value(not led.value())
+    if _led:
 
+        _led.value(not _led.value())
+
+
+# =========================
+# STOP
+# =========================
+
+def stop():
+
+    _timer.deinit()
+
+    if _led:
+
+        _led.value(0)
+
+
+# =========================
+# SET STATE
+# =========================
 
 def set_state(new_state):
 
-    global state
+    global _state
 
-    state = new_state
+    if _led is None:
 
-    timer.deinit()
+        init()
 
-    if state == "idle":
+    if new_state == _state:
 
-        led.value(0)
+        return
 
-    elif state == "mqtt_connected":
+    _state = new_state
 
-        led.value(1)
+    _timer.deinit()
 
-    elif state == "wifi_connecting":
+    if new_state == STATE_IDLE:
 
-        timer.init(
+        _led.value(0)
+
+    elif new_state == STATE_MQTT:
+
+        _led.value(1)
+
+    elif new_state == STATE_WIFI:
+
+        _timer.init(
             period=500,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
 
-    elif state == "ota_updating":
+    elif new_state == STATE_OTA:
 
-        timer.init(
+        _timer.init(
             period=100,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
 
-    elif state == "running":
+    elif new_state == STATE_RUNNING:
 
-        timer.init(
+        _timer.init(
             period=1000,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
 
-    elif state == "error":
+    elif new_state == STATE_ERROR:
 
-        timer.init(
+        _timer.init(
             period=2000,
             mode=Timer.PERIODIC,
             callback=_toggle
         )
+
+    else:
+
+        print("Unknown LED state:", new_state)
