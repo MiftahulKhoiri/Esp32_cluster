@@ -1,43 +1,85 @@
-import paho.mqtt.client as mqtt
 import json
 import time
-import random
+
+import paho.mqtt.client as mqtt
 
 from config import MQTT_BROKER
 
-nodes = set()
 
-results = []
+# =========================
+# STATE
+# =========================
 
+ready_nodes = set()
+
+
+# =========================
+# MQTT CONNECT
+# =========================
 
 def on_connect(client, userdata, flags, rc):
 
-    print("Connected")
+    print("Server connected")
 
-    client.subscribe("cluster/register")
+    client.subscribe("cluster/status/+")
+    client.subscribe("cluster/result/+")
+    client.subscribe("cluster/task_status/+")
 
-    client.subscribe("cluster/result/#")
 
+# =========================
+# MESSAGE HANDLER
+# =========================
 
 def on_message(client, userdata, msg):
 
     topic = msg.topic
+
     payload = json.loads(msg.payload)
 
-    if topic == "cluster/register":
+    # ---------------------
+    # NODE STATUS
+    # ---------------------
+
+    if topic.startswith("cluster/status"):
 
         node = payload["node"]
 
-        nodes.add(node)
+        status = payload["status"]
 
-        print("Node registered:", node)
+        if status == "ready":
+
+            ready_nodes.add(node)
+
+            print("Node READY:", node)
+
+        if status == "offline":
+
+            ready_nodes.discard(node)
+
+            print("Node OFFLINE:", node)
+
+    # ---------------------
+    # TASK RESULT
+    # ---------------------
 
     if topic.startswith("cluster/result"):
 
         print("Result received")
 
-        results.append(payload)
+        print(payload)
 
+    # ---------------------
+    # TASK STATUS (ACK)
+    # ---------------------
+
+    if topic.startswith("cluster/task_status"):
+
+        print("Task status:", payload)
+
+
+# =========================
+# MQTT SETUP
+# =========================
 
 client = mqtt.Client()
 
@@ -49,38 +91,42 @@ client.connect(MQTT_BROKER)
 client.loop_start()
 
 
-def wait_nodes():
-
-    print("Waiting nodes...")
-
-    while len(nodes) == 0:
-
-        time.sleep(1)
-
-
-def distribute_task():
-
-    print("Distributing task")
-
-    task = {
-
-        "count": 100
-
-    }
-
-    for node in nodes:
-
-        topic = "cluster/task/" + node
-
-        client.publish(topic, json.dumps(task))
-
-
-wait_nodes()
-
-time.sleep(2)
-
-distribute_task()
+# =========================
+# DEMO TASK LOOP
+# =========================
 
 while True:
 
-    time.sleep(1)
+    if ready_nodes:
+
+        node = list(ready_nodes)[0]
+
+        task = {
+
+            "task_id": str(time.time()),
+
+            "task": "random",
+
+            "count": 10
+
+        }
+
+        topic = "cluster/task/" + node
+
+        client.publish(
+
+            topic,
+
+            json.dumps(task)
+
+        )
+
+        print("Task sent to", node)
+
+        time.sleep(5)
+
+    else:
+
+        print("Waiting for READY node")
+
+        time.sleep(2)
