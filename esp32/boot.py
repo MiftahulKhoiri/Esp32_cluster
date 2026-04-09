@@ -1,6 +1,9 @@
 import network
 import time
 from config import WIFI_SSID, WIFI_PASSWORD
+import ota
+
+
 
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
@@ -23,3 +26,4 @@ def connect_wifi():
     print(wlan.ifconfig())
 
 connect_wifi()
+ota.perform_update()
