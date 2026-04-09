@@ -1,6 +1,7 @@
 from umqtt.simple import MQTTClient
 import ujson
 import time
+import machine
 
 from config import MQTT_BROKER, NODE_ID
 from worker import run_task
@@ -10,34 +11,58 @@ import ota
 client = None
 
 
+# =========================
+# MESSAGE HANDLER
+# =========================
+
 def on_message(topic, msg):
 
-    topic = topic.decode()
+    try:
 
-    if topic == "cluster/task/" + NODE_ID:
+        topic = topic.decode()
 
-        print("Task received")
+        if topic == "cluster/task/" + NODE_ID:
 
-        data = ujson.loads(msg)
+            print("Task received")
 
-        result = run_task(data)
+            data = ujson.loads(msg)
 
-        send_result(result)
+            result = run_task(data)
 
+            send_result(result)
+
+    except Exception as e:
+
+        print("Task error:", e)
+
+
+# =========================
+# SEND RESULT
+# =========================
 
 def send_result(result):
 
-    topic = "cluster/result/" + NODE_ID
+    try:
 
-    payload = ujson.dumps({
+        topic = "cluster/result/" + NODE_ID
 
-        "node": NODE_ID,
-        "result": result
+        payload = ujson.dumps({
 
-    })
+            "node": NODE_ID,
+            "result": result
 
-    client.publish(topic, payload)
+        })
 
+        client.publish(topic, payload)
+
+    except Exception as e:
+
+        print("Send result error:", e)
+
+
+# =========================
+# REGISTER NODE
+# =========================
 
 def register_node():
 
@@ -51,34 +76,94 @@ def register_node():
     client.publish("cluster/register", payload)
 
 
-def connect():
+# =========================
+# MQTT CONNECT
+# =========================
+
+def connect_mqtt():
 
     global client
 
-    client = MQTTClient(NODE_ID, MQTT_BROKER)
+    while True:
 
-    client.set_callback(on_message)
+        try:
 
-    client.connect()
+            print("Connecting MQTT...")
 
-    client.subscribe("cluster/task/" + NODE_ID)
+            client = MQTTClient(
+                client_id=NODE_ID,
+                server=MQTT_BROKER,
+                keepalive=60
+            )
 
-    print("MQTT connected")
+            client.set_callback(on_message)
 
-    register_node()
+            client.connect()
 
-connect_wifi()
-ota.perform_update()
-connect()
+            client.subscribe(
+                "cluster/task/" + NODE_ID
+            )
 
-while True:
+            print("MQTT connected")
+
+            register_node()
+
+            return
+
+        except Exception as e:
+
+            print("MQTT connect failed:", e)
+
+            time.sleep(5)
+
+
+# =========================
+# MAIN LOOP
+# =========================
+
+def main():
+
+    print("Booting node:", NODE_ID)
+
+    # 1) CONNECT WIFI
+
+    connect_wifi()
+
+    time.sleep(2)
+
+    # 2) OTA CHECK
 
     try:
 
-        client.check_msg()
+        ota.perform_update()
+
+    except Exception as e:
+
+        print("OTA error:", e)
+
+    # 3) CONNECT MQTT
+
+    connect_mqtt()
+
+    # 4) LOOP
+
+    while True:
+
+        try:
+
+            client.check_msg()
+
+        except Exception as e:
+
+            print("MQTT error:", e)
+
+            time.sleep(2)
+
+            connect_mqtt()
 
         time.sleep(0.1)
 
-    except:
 
-        connect()
+# =========================
+
+main()
