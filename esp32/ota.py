@@ -2,9 +2,30 @@ import urequests
 import machine
 import ujson
 import os
+import time
 
 from config import OTA_SERVER, OTA_PORT, VERSION
 
+try:
+    import led
+    LED_AVAILABLE = True
+except:
+    LED_AVAILABLE = False
+
+
+# =========================
+# CONFIG
+# =========================
+
+TEMP_FILE = "main_new.py"
+TARGET_FILE = "main.py"
+
+REQUEST_TIMEOUT = 10
+
+
+# =========================
+# URL BUILDER
+# =========================
 
 def get_url(path):
 
@@ -15,9 +36,15 @@ def get_url(path):
     )
 
 
+# =========================
+# CHECK UPDATE
+# =========================
+
 def check_update():
 
     try:
+
+        print("Checking update...")
 
         url = get_url("version")
 
@@ -25,9 +52,9 @@ def check_update():
 
         data = response.json()
 
-        server_version = data["version"]
-
         response.close()
+
+        server_version = data["version"]
 
         print("Current:", VERSION)
         print("Server :", server_version)
@@ -49,9 +76,16 @@ def check_update():
         return False
 
 
+# =========================
+# DOWNLOAD FILE SAFE
+# =========================
+
 def download_firmware():
 
     try:
+
+        if LED_AVAILABLE:
+            led.set_state(led.STATE_OTA)
 
         print("Downloading firmware")
 
@@ -59,13 +93,30 @@ def download_firmware():
 
         response = urequests.get(url)
 
-        with open("main.py", "wb") as f:
+        size = 0
 
-            f.write(response.content)
+        with open(TEMP_FILE, "wb") as f:
+
+            while True:
+
+                chunk = response.raw.read(512)
+
+                if not chunk:
+                    break
+
+                f.write(chunk)
+
+                size += len(chunk)
 
         response.close()
 
-        print("Firmware updated")
+        if size == 0:
+
+            print("Download failed: empty file")
+
+            return False
+
+        print("Downloaded:", size, "bytes")
 
         return True
 
@@ -76,12 +127,61 @@ def download_firmware():
         return False
 
 
+# =========================
+# REPLACE FILE SAFE
+# =========================
+
+def apply_update():
+
+    try:
+
+        if TARGET_FILE in os.listdir():
+
+            os.remove(TARGET_FILE)
+
+        os.rename(TEMP_FILE, TARGET_FILE)
+
+        print("Firmware replaced")
+
+        return True
+
+    except Exception as e:
+
+        print("Apply update failed:", e)
+
+        return False
+
+
+# =========================
+# MAIN OTA PROCESS
+# =========================
+
 def perform_update():
 
-    if check_update():
+    try:
 
-        if download_firmware():
+        if not check_update():
 
-            print("Restarting")
+            return False
 
-            machine.reset()
+        if not download_firmware():
+
+            return False
+
+        if not apply_update():
+
+            return False
+
+        print("Restarting device")
+
+        time.sleep(2)
+
+        machine.reset()
+
+        return True
+
+    except Exception as e:
+
+        print("OTA error:", e)
+
+        return False
