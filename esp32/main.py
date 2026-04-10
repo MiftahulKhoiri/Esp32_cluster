@@ -23,6 +23,8 @@ except:
 
 client = None
 
+last_heartbeat = 0
+
 
 # =========================
 # TASK STATUS (ACK)
@@ -76,13 +78,42 @@ def set_ready_state():
         )
 
         if LED_AVAILABLE:
-            led.set_state(led.STATE_READY)
+            led.set_state(
+                led.STATE_READY
+            )
 
         print("Node READY")
 
     except Exception as e:
 
         print("Ready state error:", e)
+
+
+# =========================
+# OTA HANDLER (NEW)
+# =========================
+
+def handle_ota_command():
+
+    print("OTA command received")
+
+    if LED_AVAILABLE:
+        led.set_state(
+            led.STATE_OTA
+        )
+
+    try:
+
+        ota.perform_update()
+
+    except Exception as e:
+
+        print("OTA update failed:", e)
+
+        if LED_AVAILABLE:
+            led.set_state(
+                led.STATE_ERROR
+            )
 
 
 # =========================
@@ -94,6 +125,20 @@ def on_message(topic, msg):
     try:
 
         topic = topic.decode()
+
+        # ---------------------
+        # OTA COMMAND
+        # ---------------------
+
+        if topic == "cluster/ota/update":
+
+            handle_ota_command()
+
+            return
+
+        # ---------------------
+        # TASK COMMAND
+        # ---------------------
 
         if topic == "cluster/task/" + NODE_ID:
 
@@ -125,11 +170,13 @@ def on_message(topic, msg):
                 "running"
             )
 
+            # RUN TASK
+
             result = run_task(data)
 
             send_result(result)
 
-            # ACK: FINAL STATUS
+            # FINAL STATUS
 
             final_status = result.get(
                 "status",
@@ -141,7 +188,7 @@ def on_message(topic, msg):
                 final_status
             )
 
-            # kembali standby
+            # BACK TO READY
 
             set_ready_state()
 
@@ -177,7 +224,10 @@ def send_result(result):
 
         })
 
-        client.publish(topic, payload)
+        client.publish(
+            topic,
+            payload
+        )
 
     except Exception as e:
 
@@ -198,8 +248,11 @@ def register_node():
     })
 
     client.publish(
+
         "cluster/register",
+
         payload
+
     )
 
 
@@ -256,10 +309,14 @@ def connect_mqtt():
 
             client.connect()
 
+            # SUBSCRIBE TOPICS
+
             client.subscribe(
-
                 "cluster/task/" + NODE_ID
+            )
 
+            client.subscribe(
+                "cluster/ota/update"
             )
 
             print("MQTT connected")
@@ -285,8 +342,6 @@ def connect_mqtt():
 # =========================
 # HEARTBEAT
 # =========================
-
-last_heartbeat = 0
 
 def send_heartbeat():
 
@@ -316,9 +371,9 @@ def send_heartbeat():
 
         )
 
-    except:
+    except Exception as e:
 
-        pass
+        print("Heartbeat error:", e)
 
 
 # =========================
@@ -340,7 +395,7 @@ def main():
 
     time.sleep(2)
 
-    # 2) OTA CHECK
+    # 2) OTA CHECK ON BOOT
 
     try:
 
@@ -354,7 +409,7 @@ def main():
 
     connect_mqtt()
 
-    # 4) LOOP
+    # 4) MAIN LOOP
 
     while True:
 
