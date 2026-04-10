@@ -3,8 +3,14 @@ import machine
 import ujson
 import os
 import time
+import socket
 
-from config import OTA_SERVER, OTA_PORT, VERSION
+from config import (
+    OTA_SERVER,
+    OTA_PORT,
+    VERSION,
+    REQUEST_TIMEOUT
+)
 
 try:
     import led
@@ -13,18 +19,12 @@ except:
     LED_AVAILABLE = False
 
 
-# =========================
-# CONFIG
-# =========================
-
 TEMP_FILE = "main_new.py"
 TARGET_FILE = "main.py"
 
-REQUEST_TIMEOUT = 10
-
 
 # =========================
-# URL BUILDER
+# URL
 # =========================
 
 def get_url(path):
@@ -42,93 +42,134 @@ def get_url(path):
 
 def check_update():
 
-    try:
+    for attempt in range(3):
 
-        print("Checking update...")
+        try:
 
-        url = get_url("version")
+            print("Checking update...")
 
-        response = urequests.get(url)
+            socket.setdefaulttimeout(
+                REQUEST_TIMEOUT
+            )
 
-        data = response.json()
+            url = get_url("version")
 
-        response.close()
+            print("URL:", url)
 
-        server_version = data["version"]
+            response = urequests.get(url)
 
-        print("Current:", VERSION)
-        print("Server :", server_version)
+            data = response.json()
 
-        if server_version != VERSION:
+            response.close()
 
-            print("Update available")
+            server_version = data["version"]
 
-            return True
+            print("Current:", VERSION)
+            print("Server :", server_version)
 
-        print("No update")
+            if server_version != VERSION:
 
-        return False
+                print("Update available")
 
-    except Exception as e:
+                return True
 
-        print("Update check failed:", e)
+            print("No update")
 
-        return False
+            return False
+
+        except Exception as e:
+
+            print(
+                "Update check failed:",
+                e
+            )
+
+            time.sleep(2)
+
+    return False
 
 
 # =========================
-# DOWNLOAD FILE SAFE
+# DOWNLOAD
 # =========================
 
 def download_firmware():
 
-    try:
+    for attempt in range(3):
 
-        if LED_AVAILABLE:
-            led.set_state(led.STATE_OTA)
+        try:
 
-        print("Downloading firmware")
+            socket.setdefaulttimeout(
+                REQUEST_TIMEOUT
+            )
 
-        url = get_url("firmware")
+            if LED_AVAILABLE:
 
-        response = urequests.get(url)
+                led.set_state(
+                    led.STATE_OTA
+                )
 
-        size = 0
+            print("Downloading firmware")
 
-        with open(TEMP_FILE, "wb") as f:
+            url = get_url("firmware")
 
-            while True:
+            print("URL:", url)
 
-                chunk = response.raw.read(512)
+            response = urequests.get(url)
 
-                if not chunk:
-                    break
+            size = 0
 
-                f.write(chunk)
+            with open(
+                TEMP_FILE,
+                "wb"
+            ) as f:
 
-                size += len(chunk)
+                while True:
 
-        response.close()
+                    chunk = response.raw.read(
+                        512
+                    )
 
-        if size == 0:
+                    if not chunk:
 
-            print("Download failed: empty file")
+                        break
 
-            return False
+                    f.write(chunk)
 
-        print("Downloaded:", size, "bytes")
+                    size += len(chunk)
 
-        return True
+            response.close()
 
-    except Exception as e:
+            if size == 0:
 
-        print("Download failed:", e)
+                print(
+                    "Download empty"
+                )
 
-        return False
+                return False
+
+            print(
+                "Downloaded:",
+                size,
+                "bytes"
+            )
+
+            return True
+
+        except Exception as e:
+
+            print(
+                "Download failed:",
+                e
+            )
+
+            time.sleep(2)
+
+    return False
 
 
 # =========================
-# REPLACE FILE SAFE
+# APPLY UPDATE
 # =========================
 
 def apply_update():
@@ -137,23 +178,33 @@ def apply_update():
 
         if TARGET_FILE in os.listdir():
 
-            os.remove(TARGET_FILE)
+            os.remove(
+                TARGET_FILE
+            )
 
-        os.rename(TEMP_FILE, TARGET_FILE)
+        os.rename(
+            TEMP_FILE,
+            TARGET_FILE
+        )
 
-        print("Firmware replaced")
+        print(
+            "Firmware replaced"
+        )
 
         return True
 
     except Exception as e:
 
-        print("Apply update failed:", e)
+        print(
+            "Apply update failed:",
+            e
+        )
 
         return False
 
 
 # =========================
-# MAIN OTA PROCESS
+# MAIN OTA
 # =========================
 
 def perform_update():
@@ -172,7 +223,9 @@ def perform_update():
 
             return False
 
-        print("Restarting device")
+        print(
+            "Restarting device"
+        )
 
         time.sleep(2)
 
@@ -182,6 +235,9 @@ def perform_update():
 
     except Exception as e:
 
-        print("OTA error:", e)
+        print(
+            "OTA error:",
+            e
+        )
 
         return False
