@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 VENV_DIR = BASE_DIR / "venv"
 REQ_FILE = BASE_DIR / "requirements.txt"
 
-MODEL_PATH = BASE_DIR / "model"
+
 
 
 # ===============================
