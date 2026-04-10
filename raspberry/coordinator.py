@@ -18,6 +18,10 @@ from config import (
 
 ready_nodes = set()
 
+node_list = []
+
+node_index = 0
+
 pending_tasks = []
 
 running_tasks = {}
@@ -25,6 +29,35 @@ running_tasks = {}
 completed_tasks = {}
 
 TASK_TIMEOUT = 30
+
+
+# =========================
+# NODE MANAGEMENT
+# =========================
+
+def update_node_list():
+
+    global node_list
+
+    node_list = list(ready_nodes)
+
+
+def get_next_node():
+
+    global node_index
+
+    if not node_list:
+        return None
+
+    if node_index >= len(node_list):
+
+        node_index = 0
+
+    node = node_list[node_index]
+
+    node_index += 1
+
+    return node
 
 
 # =========================
@@ -82,9 +115,9 @@ def mark_completed(task_id, status):
         status
     )
 
-    # ---------------------
+    # =====================
     # RETRY LOGIC
-    # ---------------------
+    # =====================
 
     if status in ["error", "timeout"]:
 
@@ -209,11 +242,15 @@ def on_message(client, userdata, msg):
 
             ready_nodes.add(node)
 
+            update_node_list()
+
             print("Node READY:", node)
 
         elif status == "offline":
 
             ready_nodes.discard(node)
+
+            update_node_list()
 
             print("Node OFFLINE:", node)
 
@@ -300,7 +337,10 @@ def dispatch_task():
     if not task:
         return
 
-    node = list(ready_nodes)[0]
+    node = get_next_node()
+
+    if not node:
+        return
 
     topic = "cluster/task/" + node
 
@@ -314,9 +354,7 @@ def dispatch_task():
         running_tasks[task["task_id"]] = {
 
             "task": task,
-
             "start_time": time.time(),
-
             "node": node
 
         }
@@ -328,6 +366,8 @@ def dispatch_task():
         )
 
         ready_nodes.discard(node)
+
+        update_node_list()
 
     except Exception as e:
 
