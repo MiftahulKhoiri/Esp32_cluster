@@ -4,7 +4,7 @@ import uuid
 
 import paho.mqtt.client as mqtt
 
-from config import (
+from raspberry.config import (
     MQTT_BROKER,
     TASK_DISPATCH_INTERVAL,
     DEFAULT_TASK,
