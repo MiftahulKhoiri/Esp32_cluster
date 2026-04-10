@@ -13,7 +13,7 @@ from raspberry.config import (
     NODE_HEARTBEAT_TIMEOUT
 )
 
-from database import (
+from raspberry.database import (
     init_db,
     insert_task,
     get_pending_task,
