@@ -9,7 +9,8 @@ from config import (
     TASK_DISPATCH_INTERVAL,
     DEFAULT_TASK,
     RETRY_LIMIT,
-    TASK_TIMEOUT
+    TASK_TIMEOUT,
+    NODE_HEARTBEAT_TIMEOUT
 )
 
 from database import (
@@ -34,6 +35,8 @@ node_index = 0
 running_tasks = {}
 
 completed_tasks = {}
+
+node_last_seen = {}
 
 
 # =========================
@@ -70,6 +73,33 @@ def get_next_node():
     node_index += 1
 
     return node
+
+
+# =========================
+# NODE HEALTH MONITOR
+# =========================
+
+def check_node_health():
+
+    now = time.time()
+
+    dead_nodes = []
+
+    for node, last_seen in node_last_seen.items():
+
+        if now - last_seen > NODE_HEARTBEAT_TIMEOUT:
+
+            dead_nodes.append(node)
+
+    for node in dead_nodes:
+
+        print("Node timeout:", node)
+
+        ready_nodes.discard(node)
+
+        node_last_seen.pop(node, None)
+
+        update_node_list()
 
 
 # =========================
@@ -220,6 +250,10 @@ def on_message(client, userdata, msg):
 
         return
 
+    # ---------------------
+    # NODE STATUS / HEARTBEAT
+    # ---------------------
+
     if topic.startswith("cluster/status"):
 
         node = payload.get("node")
@@ -229,7 +263,11 @@ def on_message(client, userdata, msg):
         if not node:
             return
 
-        if status == "ready":
+        # update heartbeat
+
+        node_last_seen[node] = time.time()
+
+        if status in ["ready", "online"]:
 
             ready_nodes.add(node)
 
@@ -241,9 +279,15 @@ def on_message(client, userdata, msg):
 
             ready_nodes.discard(node)
 
+            node_last_seen.pop(node, None)
+
             update_node_list()
 
             print("Node OFFLINE:", node)
+
+    # ---------------------
+    # TASK STATUS (ACK)
+    # ---------------------
 
     if topic.startswith("cluster/task_status"):
 
@@ -276,6 +320,10 @@ def on_message(client, userdata, msg):
                 task_id,
                 status
             )
+
+    # ---------------------
+    # TASK RESULT
+    # ---------------------
 
     if topic.startswith("cluster/result"):
 
@@ -371,6 +419,8 @@ while True:
     dispatch_task()
 
     check_timeouts()
+
+    check_node_health()
 
     time.sleep(
         TASK_DISPATCH_INTERVAL
