@@ -1,9 +1,12 @@
 from umqtt.simple import MQTTClient
 import ujson
 import time
-import machine
 
-from config import MQTT_BROKER, NODE_ID
+from config import (
+    MQTT_BROKER,
+    NODE_ID,
+    HEARTBEAT_INTERVAL
+)
 
 from worker import run_task
 
@@ -27,10 +30,13 @@ last_heartbeat = 0
 
 
 # =========================
-# TASK STATUS (ACK)
+# TASK STATUS
 # =========================
 
-def send_task_status(task_id, status):
+def send_task_status(
+    task_id,
+    status
+):
 
     try:
 
@@ -43,7 +49,10 @@ def send_task_status(task_id, status):
 
         })
 
-        topic = "cluster/task_status/" + NODE_ID
+        topic = (
+            "cluster/task_status/"
+            + NODE_ID
+        )
 
         client.publish(
             topic,
@@ -52,11 +61,14 @@ def send_task_status(task_id, status):
 
     except Exception as e:
 
-        print("Task status error:", e)
+        print(
+            "Task status error:",
+            e
+        )
 
 
 # =========================
-# READY STATE
+# READY
 # =========================
 
 def set_ready_state():
@@ -72,86 +84,90 @@ def set_ready_state():
 
         client.publish(
 
-            "cluster/status/" + NODE_ID,
+            "cluster/status/"
+            + NODE_ID,
+
             payload
 
         )
 
         if LED_AVAILABLE:
+
             led.set_state(
                 led.STATE_READY
             )
 
-        print("Node READY")
+        print(
+            "Node READY"
+        )
 
     except Exception as e:
 
-        print("Ready state error:", e)
+        print(
+            "Ready error:",
+            e
+        )
 
 
 # =========================
-# OTA HANDLER (NEW)
+# OTA COMMAND
 # =========================
 
 def handle_ota_command():
 
-    print("OTA command received")
+    print(
+        "OTA command received"
+    )
 
     if LED_AVAILABLE:
+
         led.set_state(
             led.STATE_OTA
         )
 
-    try:
-
-        ota.perform_update()
-
-    except Exception as e:
-
-        print("OTA update failed:", e)
-
-        if LED_AVAILABLE:
-            led.set_state(
-                led.STATE_ERROR
-            )
+    ota.perform_update()
 
 
 # =========================
-# MESSAGE HANDLER
+# MESSAGE
 # =========================
 
-def on_message(topic, msg):
+def on_message(
+    topic,
+    msg
+):
 
     try:
 
         topic = topic.decode()
 
-        # ---------------------
-        # OTA COMMAND
-        # ---------------------
+        # OTA
 
-        if topic == "cluster/ota/update":
+        if topic == \
+        "cluster/ota/update":
 
             handle_ota_command()
 
             return
 
-        # ---------------------
-        # TASK COMMAND
-        # ---------------------
+        # TASK
 
-        if topic == "cluster/task/" + NODE_ID:
+        if topic == \
+        "cluster/task/" \
+        + NODE_ID:
 
-            print("Task received")
+            print(
+                "Task received"
+            )
 
-            data = ujson.loads(msg)
+            data = \
+            ujson.loads(msg)
 
-            task_id = data.get(
+            task_id = \
+            data.get(
                 "task_id",
                 "unknown"
             )
-
-            # ACK: RECEIVED
 
             send_task_status(
                 task_id,
@@ -159,26 +175,25 @@ def on_message(topic, msg):
             )
 
             if LED_AVAILABLE:
+
                 led.set_state(
                     led.STATE_RUNNING
                 )
-
-            # ACK: RUNNING
 
             send_task_status(
                 task_id,
                 "running"
             )
 
-            # RUN TASK
+            result = \
+            run_task(data)
 
-            result = run_task(data)
+            send_result(
+                result
+            )
 
-            send_result(result)
-
-            # FINAL STATUS
-
-            final_status = result.get(
+            final_status = \
+            result.get(
                 "status",
                 "done"
             )
@@ -188,36 +203,35 @@ def on_message(topic, msg):
                 final_status
             )
 
-            # BACK TO READY
-
             set_ready_state()
 
     except Exception as e:
 
-        print("Task error:", e)
+        print(
+            "Task error:",
+            e
+        )
 
         send_task_status(
             "unknown",
             "error"
         )
 
-        if LED_AVAILABLE:
-            led.set_state(
-                led.STATE_ERROR
-            )
-
 
 # =========================
-# SEND RESULT
+# RESULT
 # =========================
 
 def send_result(result):
 
     try:
 
-        topic = "cluster/result/" + NODE_ID
+        topic = \
+        "cluster/result/" \
+        + NODE_ID
 
-        payload = ujson.dumps({
+        payload = \
+        ujson.dumps({
 
             "node": NODE_ID,
             "result": result
@@ -231,11 +245,14 @@ def send_result(result):
 
     except Exception as e:
 
-        print("Send result error:", e)
+        print(
+            "Send result error:",
+            e
+        )
 
 
 # =========================
-# REGISTER NODE
+# REGISTER
 # =========================
 
 def register_node():
@@ -268,12 +285,9 @@ def connect_mqtt():
 
         try:
 
-            print("Connecting MQTT...")
-
-            if LED_AVAILABLE:
-                led.set_state(
-                    led.STATE_WIFI
-                )
+            print(
+                "Connecting MQTT..."
+            )
 
             if client:
 
@@ -290,36 +304,28 @@ def connect_mqtt():
 
             )
 
-            # Last Will
-
-            client.set_last_will(
-
-                topic="cluster/status/" + NODE_ID,
-
-                msg=ujson.dumps({
-                    "node": NODE_ID,
-                    "status": "offline"
-                }),
-
-                retain=False
-
+            client.set_callback(
+                on_message
             )
-
-            client.set_callback(on_message)
 
             client.connect()
 
-            # SUBSCRIBE TOPICS
-
             client.subscribe(
-                "cluster/task/" + NODE_ID
+
+                "cluster/task/"
+                + NODE_ID
+
             )
 
             client.subscribe(
+
                 "cluster/ota/update"
+
             )
 
-            print("MQTT connected")
+            print(
+                "MQTT connected"
+            )
 
             register_node()
 
@@ -329,12 +335,10 @@ def connect_mqtt():
 
         except Exception as e:
 
-            print("MQTT connect failed:", e)
-
-            if LED_AVAILABLE:
-                led.set_state(
-                    led.STATE_ERROR
-                )
+            print(
+                "MQTT failed:",
+                e
+            )
 
             time.sleep(5)
 
@@ -349,7 +353,9 @@ def send_heartbeat():
 
     now = time.time()
 
-    if now - last_heartbeat < 30:
+    if now - last_heartbeat < \
+       HEARTBEAT_INTERVAL:
+
         return
 
     last_heartbeat = now
@@ -365,7 +371,8 @@ def send_heartbeat():
 
         client.publish(
 
-            "cluster/status/" + NODE_ID,
+            "cluster/status/"
+            + NODE_ID,
 
             payload
 
@@ -373,29 +380,34 @@ def send_heartbeat():
 
     except Exception as e:
 
-        print("Heartbeat error:", e)
+        print(
+            "Heartbeat error:",
+            e
+        )
 
 
 # =========================
-# MAIN LOOP
+# MAIN
 # =========================
 
 def main():
 
-    print("Booting node:", NODE_ID)
+    print(
+        "Booting node:",
+        NODE_ID
+    )
 
     if LED_AVAILABLE:
+
         led.set_state(
             led.STATE_WIFI
         )
-
-    # 1) CONNECT WIFI
 
     connect_wifi()
 
     time.sleep(2)
 
-    # 2) OTA CHECK ON BOOT
+    # OTA CHECK
 
     try:
 
@@ -403,13 +415,12 @@ def main():
 
     except Exception as e:
 
-        print("OTA error:", e)
-
-    # 3) CONNECT MQTT
+        print(
+            "OTA error:",
+            e
+        )
 
     connect_mqtt()
-
-    # 4) MAIN LOOP
 
     while True:
 
@@ -423,12 +434,10 @@ def main():
 
         except Exception as e:
 
-            print("MQTT error:", e)
-
-            if LED_AVAILABLE:
-                led.set_state(
-                    led.STATE_ERROR
-                )
+            print(
+                "MQTT error:",
+                e
+            )
 
             time.sleep(2)
 
@@ -436,7 +445,5 @@ def main():
 
         time.sleep(0.1)
 
-
-# =========================
 
 main()
