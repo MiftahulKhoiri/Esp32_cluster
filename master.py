@@ -108,17 +108,49 @@ def command_listener():
             print("Command error:", e)
 
 
-# =========================
-# MAIN
-# =========================
 
-def main():
+def print_banner():
 
     print("")
     print("================================")
     print(" ESP32 CLUSTER MASTER SERVER")
     print("================================")
     print("")
+
+    print("Services:")
+    print("  OTA Server        : starting")
+    print("  Coordinator       : starting")
+    print("  Database          : ready")
+    print("")
+
+    print("Commands:")
+    print("  status            : show ready nodes")
+    print("  nodes             : list all nodes")
+    print("  tasks             : show running tasks")
+    print("  ota               : trigger OTA update")
+    print("  restart           : restart services")
+    print("  exit              : stop server")
+    print("")
+
+    print("System:")
+
+    now = time.strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    print("  Version           : 1.0")
+    print("  Mode              : development")
+    print("  Time              : {}".format(now))
+    print("")
+
+
+# =========================
+# MAIN
+# =========================
+
+def main():
+
+    print_banner()
 
     ota_thread = threading.Thread(
         target=start_ota_server,
