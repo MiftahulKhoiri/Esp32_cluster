@@ -8,7 +8,16 @@ from config import (
     MQTT_BROKER,
     TASK_DISPATCH_INTERVAL,
     DEFAULT_TASK,
-    RETRY_LIMIT
+    RETRY_LIMIT,
+    TASK_TIMEOUT
+)
+
+from database import (
+    init_db,
+    insert_task,
+    get_pending_task,
+    update_status,
+    increment_retry
 )
 
 
@@ -22,13 +31,16 @@ node_list = []
 
 node_index = 0
 
-pending_tasks = []
-
 running_tasks = {}
 
 completed_tasks = {}
 
-TASK_TIMEOUT = 30
+
+# =========================
+# DATABASE INIT
+# =========================
+
+init_db()
 
 
 # =========================
@@ -74,19 +86,16 @@ def add_task(task):
 
     task["created"] = time.time()
 
-    pending_tasks.append(task)
+    insert_task(task)
 
-    print("Task added:", task_id)
+    print("Task stored:", task_id)
 
     return task_id
 
 
 def get_next_task():
 
-    if not pending_tasks:
-        return None
-
-    return pending_tasks.pop(0)
+    return get_pending_task()
 
 
 def mark_running(task_id):
@@ -115,36 +124,25 @@ def mark_completed(task_id, status):
         status
     )
 
-    # =====================
-    # RETRY LOGIC
-    # =====================
-
     if status in ["error", "timeout"]:
 
         if retry < RETRY_LIMIT:
 
-            task["retry"] = retry + 1
-
-            pending_tasks.append(task)
+            increment_retry(task)
 
             print(
                 "Retry task:",
                 task_id,
                 "attempt",
-                task["retry"]
+                retry + 1
             )
 
         else:
 
-            completed_tasks[task_id] = {
-
-                "status": "failed",
-
-                "retry": retry,
-
-                "finished": time.time()
-
-            }
+            update_status(
+                task_id,
+                "failed"
+            )
 
             print(
                 "Task failed permanently:",
@@ -153,15 +151,12 @@ def mark_completed(task_id, status):
 
     else:
 
-        completed_tasks[task_id] = {
+        update_status(
+            task_id,
+            status
+        )
 
-            "status": status,
-
-            "retry": retry,
-
-            "finished": time.time()
-
-        }
+    completed_tasks[task_id] = status
 
     del running_tasks[task_id]
 
@@ -225,10 +220,6 @@ def on_message(client, userdata, msg):
 
         return
 
-    # ---------------------
-    # NODE STATUS
-    # ---------------------
-
     if topic.startswith("cluster/status"):
 
         node = payload.get("node")
@@ -253,10 +244,6 @@ def on_message(client, userdata, msg):
             update_node_list()
 
             print("Node OFFLINE:", node)
-
-    # ---------------------
-    # TASK STATUS (ACK)
-    # ---------------------
 
     if topic.startswith("cluster/task_status"):
 
@@ -289,10 +276,6 @@ def on_message(client, userdata, msg):
                 task_id,
                 status
             )
-
-    # ---------------------
-    # TASK RESULT
-    # ---------------------
 
     if topic.startswith("cluster/result"):
 
@@ -351,6 +334,11 @@ def dispatch_task():
             json.dumps(task)
         )
 
+        update_status(
+            task["task_id"],
+            "running"
+        )
+
         running_tasks[task["task_id"]] = {
 
             "task": task,
@@ -372,8 +360,6 @@ def dispatch_task():
     except Exception as e:
 
         print("Publish failed:", e)
-
-        pending_tasks.insert(0, task)
 
 
 # =========================
