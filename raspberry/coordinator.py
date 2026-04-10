@@ -7,7 +7,8 @@ import paho.mqtt.client as mqtt
 from config import (
     MQTT_BROKER,
     TASK_DISPATCH_INTERVAL,
-    DEFAULT_TASK
+    DEFAULT_TASK,
+    RETRY_LIMIT
 )
 
 
@@ -23,7 +24,6 @@ running_tasks = {}
 
 completed_tasks = {}
 
-
 TASK_TIMEOUT = 30
 
 
@@ -36,6 +36,8 @@ def add_task(task):
     task_id = str(uuid.uuid4())
 
     task["task_id"] = task_id
+
+    task["retry"] = 0
 
     task["created"] = time.time()
 
@@ -56,32 +58,79 @@ def get_next_task():
 
 def mark_running(task_id):
 
-    running_tasks[task_id] = {
+    if task_id in running_tasks:
 
-        "start_time": time.time()
+        running_tasks[task_id]["start_time"] = time.time()
 
-    }
-
-    print("Task running:", task_id)
+        print("Task running:", task_id)
 
 
 def mark_completed(task_id, status):
 
-    if task_id in running_tasks:
+    if task_id not in running_tasks:
+        return
+
+    task_info = running_tasks[task_id]
+
+    task = task_info["task"]
+
+    retry = task.get("retry", 0)
+
+    print(
+        "Task completed:",
+        task_id,
+        status
+    )
+
+    # ---------------------
+    # RETRY LOGIC
+    # ---------------------
+
+    if status in ["error", "timeout"]:
+
+        if retry < RETRY_LIMIT:
+
+            task["retry"] = retry + 1
+
+            pending_tasks.append(task)
+
+            print(
+                "Retry task:",
+                task_id,
+                "attempt",
+                task["retry"]
+            )
+
+        else:
+
+            completed_tasks[task_id] = {
+
+                "status": "failed",
+
+                "retry": retry,
+
+                "finished": time.time()
+
+            }
+
+            print(
+                "Task failed permanently:",
+                task_id
+            )
+
+    else:
 
         completed_tasks[task_id] = {
 
             "status": status,
+
+            "retry": retry,
+
             "finished": time.time()
+
         }
 
-        del running_tasks[task_id]
-
-        print(
-            "Task completed:",
-            task_id,
-            status
-        )
+    del running_tasks[task_id]
 
 
 # =========================
@@ -261,6 +310,16 @@ def dispatch_task():
             topic,
             json.dumps(task)
         )
+
+        running_tasks[task["task_id"]] = {
+
+            "task": task,
+
+            "start_time": time.time(),
+
+            "node": node
+
+        }
 
         print(
             "Task sent to",
