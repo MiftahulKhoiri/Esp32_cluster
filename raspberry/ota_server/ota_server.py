@@ -1,11 +1,21 @@
 from http.server import HTTPServer
 from http.server import BaseHTTPRequestHandler
 
-import json
 import os
 
 
-FIRMWARE_DIR = "firmware"
+# =========================
+# BASE PATH (CRITICAL FIX)
+# =========================
+
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+FIRMWARE_DIR = os.path.join(
+    BASE_DIR,
+    "firmware"
+)
 
 VERSION_FILE = "version.json"
 
@@ -29,87 +39,106 @@ class OTAHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 
+    # =========================
+    # VERSION
+    # =========================
+
     def send_version(self):
 
         path = os.path.join(
-
             FIRMWARE_DIR,
             VERSION_FILE
-
         )
 
-        with open(path, "rb") as f:
+        try:
 
-            data = f.read()
+            with open(path, "rb") as f:
 
-        self.send_response(200)
+                data = f.read()
 
-        self.send_header(
+            self.send_response(200)
 
-            "Content-Type",
-            "application/json"
+            self.send_header(
+                "Content-Type",
+                "application/json"
+            )
 
-        )
+            self.send_header(
+                "Content-Length",
+                len(data)
+            )
 
-        self.send_header(
+            self.end_headers()
 
-            "Content-Length",
-            len(data)
+            self.wfile.write(data)
 
-        )
+            print("Version sent")
 
-        self.end_headers()
+        except Exception as e:
 
-        self.wfile.write(data)
+            print("Version error:", e)
 
+            self.send_error(404)
+
+
+    # =========================
+    # FIRMWARE
+    # =========================
 
     def send_firmware(self):
 
         path = os.path.join(
-
             FIRMWARE_DIR,
             FIRMWARE_FILE
-
         )
 
-        with open(path, "rb") as f:
+        try:
 
-            data = f.read()
+            with open(path, "rb") as f:
 
-        self.send_response(200)
+                data = f.read()
 
-        self.send_header(
+            self.send_response(200)
 
-            "Content-Type",
-            "application/octet-stream"
+            self.send_header(
+                "Content-Type",
+                "application/octet-stream"
+            )
 
-        )
+            self.send_header(
+                "Content-Length",
+                len(data)
+            )
 
-        self.send_header(
+            self.end_headers()
 
-            "Content-Length",
-            len(data)
+            self.wfile.write(data)
 
-        )
+            print("Firmware sent")
 
-        self.end_headers()
+        except Exception as e:
 
-        self.wfile.write(data)
+            print("Firmware error:", e)
 
+            self.send_error(404)
+
+
+# =========================
+# SERVER
+# =========================
 
 def run():
 
     server = HTTPServer(
-
         ("0.0.0.0", 8000),
-
         OTAHandler
-
     )
 
     print("OTA server running")
 
     print("Port:", 8000)
+
+    print("Firmware dir:", FIRMWARE_DIR)
 
     server.serve_forever()
 
