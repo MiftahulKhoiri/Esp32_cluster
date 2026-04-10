@@ -6,7 +6,7 @@ from pathlib import Path
 from toolsupdate.logger import get_logger
 from toolsupdate.update import SelfUpdater
 
-log = get_logger("AI_BOOTSTRAP")
+log = get_logger("ESP32_SERVER")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 VENV_DIR = BASE_DIR / "venv"
