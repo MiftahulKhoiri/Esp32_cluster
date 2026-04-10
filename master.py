@@ -2,7 +2,7 @@ import threading
 import time
 import sys
 import signal
-from tools.bootstrap import bootstrap
+from toolsupdate.bootstrap import bootstrap
 
 
 # =========================
@@ -376,4 +376,5 @@ def main():
 
 if __name__ == "__main__":
 
+    bootstrap()
     main()
