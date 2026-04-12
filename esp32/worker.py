@@ -26,13 +26,17 @@ DEFAULT_TIMEOUT = 10
 
 def init_directories():
 
-    if PROGRAM_DIR not in os.listdir():
+    try:
 
-        os.mkdir(PROGRAM_DIR)
+        if PROGRAM_DIR not in os.listdir():
+            os.mkdir(PROGRAM_DIR)
 
-    if DATA_DIR not in os.listdir():
+        if DATA_DIR not in os.listdir():
+            os.mkdir(DATA_DIR)
 
-        os.mkdir(DATA_DIR)
+    except Exception as e:
+
+        print("Directory init error:", e)
 
 
 # =========================
@@ -66,6 +70,35 @@ def send_progress(stage, percent):
     except Exception as e:
 
         print("Progress error:", e)
+
+
+# =========================
+# MODULE RELOAD
+# =========================
+
+def reload_module(module_name):
+
+    try:
+
+        if module_name in sys.modules:
+
+            print(
+                "Reloading module:",
+                module_name
+            )
+
+            del sys.modules[module_name]
+
+        return True
+
+    except Exception as e:
+
+        print(
+            "Reload module error:",
+            e
+        )
+
+        return False
 
 
 # =========================
@@ -184,7 +217,10 @@ def handle_upload_program(task):
                 "filename missing"
             )
 
-        send_progress("upload_program", 0)
+        send_progress(
+            "upload_program",
+            0
+        )
 
         file_path = PROGRAM_DIR + "/" + filename
 
@@ -199,23 +235,38 @@ def handle_upload_program(task):
 
             f.write(data)
 
-        send_progress("upload_program", 100)
+        module_name = filename.replace(
+            ".py",
+            ""
+        )
+
+        reload_module(
+            module_name
+        )
+
+        send_progress(
+            "upload_program",
+            100
+        )
 
         print(
-            "Program saved:",
+            "Program updated:",
             file_path
         )
 
         return {
 
-            "status": "program_saved",
+            "status": "program_updated",
             "filename": filename
 
         }
 
     except Exception as e:
 
-        print("Upload program error:", e)
+        print(
+            "Upload program error:",
+            e
+        )
 
         raise
 
@@ -245,6 +296,12 @@ def handle_upload_chunk(task):
             False
         )
 
+        if not filename:
+
+            raise ValueError(
+                "filename missing"
+            )
+
         file_path = DATA_DIR + "/" + filename
 
         data = base64.b64decode(
@@ -254,7 +311,6 @@ def handle_upload_chunk(task):
         mode = "ab"
 
         if chunk_index == 1:
-
             mode = "wb"
 
         with open(
@@ -280,17 +336,18 @@ def handle_upload_chunk(task):
             total_chunks
         )
 
-        # AUTO TRAIN
+        # =====================
+        # FILE COMPLETE
+        # =====================
+
         if chunk_index == total_chunks:
 
-            print("File completed")
+            print(
+                "File completed:",
+                filename
+            )
 
             if auto_train:
-
-                send_progress(
-                    "training",
-                    0
-                )
 
                 return handle_training({
 
@@ -306,7 +363,10 @@ def handle_upload_chunk(task):
 
     except Exception as e:
 
-        print("Upload chunk error:", e)
+        print(
+            "Upload chunk error:",
+            e
+        )
 
         raise
 
@@ -335,6 +395,10 @@ def handle_training(task):
                 PROGRAM_DIR
             )
 
+        reload_module(
+            module_name
+        )
+
         send_progress(
             "training",
             10
@@ -356,6 +420,10 @@ def handle_training(task):
             100
         )
 
+        print(
+            "Training completed"
+        )
+
         return {
 
             "status": "training_done",
@@ -365,7 +433,10 @@ def handle_training(task):
 
     except Exception as e:
 
-        print("Training error:", e)
+        print(
+            "Training error:",
+            e
+        )
 
         raise
 
