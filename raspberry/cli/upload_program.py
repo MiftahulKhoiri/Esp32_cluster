@@ -9,12 +9,10 @@ import os
 
 def get_program_directory():
 
-    # lokasi file ini
     current_dir = os.path.dirname(
         os.path.abspath(__file__)
     )
 
-    # folder programs
     program_dir = os.path.join(
         current_dir,
         "programs"
@@ -57,6 +55,27 @@ def list_program_files():
     except Exception as e:
 
         print("Error membaca folder:", e)
+
+        return []
+
+
+# =========================
+# GET ACTIVE NODES
+# =========================
+
+def get_active_nodes():
+
+    try:
+
+        from raspberry.coordinator import ready_nodes
+
+        nodes = list(ready_nodes)
+
+        return nodes
+
+    except Exception as e:
+
+        print("Gagal membaca node:", e)
 
         return []
 
@@ -123,31 +142,67 @@ def upload_program():
             filename
         )
 
-        # baca file
+        # =========================
+        # READ FILE
+        # =========================
 
         with open(filepath, "r") as f:
 
             code = f.read()
 
-        # kirim ke node
+        # =========================
+        # GET ACTIVE NODES
+        # =========================
 
-        from raspberry.coordinator import add_task
+        nodes = get_active_nodes()
 
-        task = {
+        if not nodes:
 
-            "type": "upload_program",
+            print("")
+            print("Tidak ada node aktif")
+            print("")
+            return
 
-            "filename": filename,
-
-            "code": code
-
-        }
-
-        add_task(task)
+        from raspberry.coordinator import client
 
         print("")
-        print("Program dipilih :", filename)
-        print("Program berhasil dikirim ke node")
+        print("Mengirim program ke node:")
+        print("")
+
+        sent_count = 0
+
+        for node in nodes:
+
+            topic = "cluster/task/" + node
+
+            task = {
+
+                "type": "upload_program",
+
+                "filename": filename,
+
+                "code": code
+
+            }
+
+            import json
+
+            client.publish(
+                topic,
+                json.dumps(task)
+            )
+
+            print(
+                "✓ dikirim ke",
+                node
+            )
+
+            sent_count += 1
+
+        print("")
+        print("Program :", filename)
+        print("Total node :", sent_count)
+        print("Upload selesai")
         print("")
 
     except Exception as e:
