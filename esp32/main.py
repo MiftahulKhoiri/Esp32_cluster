@@ -1,6 +1,7 @@
 from umqtt.simple import MQTTClient
 import ujson
 import time
+import machine
 
 from config import (
     MQTT_BROKER,
@@ -25,18 +26,64 @@ except:
 
 
 client = None
-
 last_heartbeat = 0
+
+
+# =========================
+# SAFE RESULT SEND
+# =========================
+
+def send_result(result):
+
+    try:
+
+        topic = "cluster/result/" + NODE_ID
+
+        payload = ujson.dumps({
+
+            "node": NODE_ID,
+            "result": result
+
+        })
+
+        # protect large payload
+
+        if len(payload) > 50000:
+
+            print("Result too large")
+
+            result = {
+
+                "status": "error",
+                "message": "result too large"
+
+            }
+
+            payload = ujson.dumps({
+
+                "node": NODE_ID,
+                "result": result
+
+            })
+
+        client.publish(
+            topic,
+            payload
+        )
+
+    except Exception as e:
+
+        print(
+            "Send result error:",
+            e
+        )
 
 
 # =========================
 # TASK STATUS
 # =========================
 
-def send_task_status(
-    task_id,
-    status
-):
+def send_task_status(task_id, status):
 
     try:
 
@@ -49,10 +96,7 @@ def send_task_status(
 
         })
 
-        topic = (
-            "cluster/task_status/"
-            + NODE_ID
-        )
+        topic = "cluster/task_status/" + NODE_ID
 
         client.publish(
             topic,
@@ -84,9 +128,7 @@ def set_ready_state():
 
         client.publish(
 
-            "cluster/status/"
-            + NODE_ID,
-
+            "cluster/status/" + NODE_ID,
             payload
 
         )
@@ -97,27 +139,20 @@ def set_ready_state():
                 led.STATE_READY
             )
 
-        print(
-            "Node READY"
-        )
+        print("Node READY")
 
     except Exception as e:
 
-        print(
-            "Ready error:",
-            e
-        )
+        print("Ready error:", e)
 
 
 # =========================
-# OTA COMMAND
+# OTA
 # =========================
 
 def handle_ota_command():
 
-    print(
-        "OTA command received"
-    )
+    print("OTA command received")
 
     if LED_AVAILABLE:
 
@@ -132,10 +167,7 @@ def handle_ota_command():
 # MESSAGE
 # =========================
 
-def on_message(
-    topic,
-    msg
-):
+def on_message(topic, msg):
 
     try:
 
@@ -143,8 +175,7 @@ def on_message(
 
         # OTA
 
-        if topic == \
-        "cluster/ota/update":
+        if topic == "cluster/ota/update":
 
             handle_ota_command()
 
@@ -152,19 +183,13 @@ def on_message(
 
         # TASK
 
-        if topic == \
-        "cluster/task/" \
-        + NODE_ID:
+        if topic == "cluster/task/" + NODE_ID:
 
-            print(
-                "Task received"
-            )
+            print("Task received")
 
-            data = \
-            ujson.loads(msg)
+            data = ujson.loads(msg)
 
-            task_id = \
-            data.get(
+            task_id = data.get(
                 "task_id",
                 "unknown"
             )
@@ -185,15 +210,28 @@ def on_message(
                 "running"
             )
 
-            result = \
-            run_task(data)
+            # =========================
+            # RUN TASK SAFE
+            # =========================
 
-            send_result(
-                result
-            )
+            try:
 
-            final_status = \
-            result.get(
+                result = run_task(data)
+
+            except Exception as e:
+
+                print("Task crash:", e)
+
+                result = {
+
+                    "status": "error",
+                    "message": str(e)
+
+                }
+
+            send_result(result)
+
+            final_status = result.get(
                 "status",
                 "done"
             )
@@ -207,47 +245,11 @@ def on_message(
 
     except Exception as e:
 
-        print(
-            "Task error:",
-            e
-        )
+        print("Task error:", e)
 
         send_task_status(
             "unknown",
             "error"
-        )
-
-
-# =========================
-# RESULT
-# =========================
-
-def send_result(result):
-
-    try:
-
-        topic = \
-        "cluster/result/" \
-        + NODE_ID
-
-        payload = \
-        ujson.dumps({
-
-            "node": NODE_ID,
-            "result": result
-
-        })
-
-        client.publish(
-            topic,
-            payload
-        )
-
-    except Exception as e:
-
-        print(
-            "Send result error:",
-            e
         )
 
 
@@ -265,11 +267,8 @@ def register_node():
     })
 
     client.publish(
-
         "cluster/register",
-
         payload
-
     )
 
 
@@ -285,9 +284,7 @@ def connect_mqtt():
 
         try:
 
-            print(
-                "Connecting MQTT..."
-            )
+            print("Connecting MQTT...")
 
             if client:
 
@@ -311,21 +308,14 @@ def connect_mqtt():
             client.connect()
 
             client.subscribe(
-
-                "cluster/task/"
-                + NODE_ID
-
+                "cluster/task/" + NODE_ID
             )
 
             client.subscribe(
-
                 "cluster/ota/update"
-
             )
 
-            print(
-                "MQTT connected"
-            )
+            print("MQTT connected")
 
             register_node()
 
@@ -335,10 +325,7 @@ def connect_mqtt():
 
         except Exception as e:
 
-            print(
-                "MQTT failed:",
-                e
-            )
+            print("MQTT failed:", e)
 
             time.sleep(5)
 
@@ -353,8 +340,7 @@ def send_heartbeat():
 
     now = time.time()
 
-    if now - last_heartbeat < \
-       HEARTBEAT_INTERVAL:
+    if now - last_heartbeat < HEARTBEAT_INTERVAL:
 
         return
 
@@ -371,19 +357,14 @@ def send_heartbeat():
 
         client.publish(
 
-            "cluster/status/"
-            + NODE_ID,
-
+            "cluster/status/" + NODE_ID,
             payload
 
         )
 
     except Exception as e:
 
-        print(
-            "Heartbeat error:",
-            e
-        )
+        print("Heartbeat error:", e)
 
 
 # =========================
@@ -392,10 +373,7 @@ def send_heartbeat():
 
 def main():
 
-    print(
-        "Booting node:",
-        NODE_ID
-    )
+    print("Booting node:", NODE_ID)
 
     if LED_AVAILABLE:
 
@@ -415,10 +393,7 @@ def main():
 
     except Exception as e:
 
-        print(
-            "OTA error:",
-            e
-        )
+        print("OTA error:", e)
 
     connect_mqtt()
 
@@ -434,10 +409,7 @@ def main():
 
         except Exception as e:
 
-            print(
-                "MQTT error:",
-                e
-            )
+            print("MQTT error:", e)
 
             time.sleep(2)
 
