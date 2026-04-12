@@ -1,1 +1,0 @@
-os MicroPython untuk node esp32 
