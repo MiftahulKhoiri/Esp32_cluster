@@ -2,6 +2,7 @@
 
 import time
 import socket
+import os
 
 
 # =========================
@@ -31,6 +32,77 @@ def get_server_ip():
 
 
 # =========================
+# GET ACTIVE NODE COUNT
+# =========================
+
+def get_node_count():
+
+    try:
+
+        from raspberry.coordinator import ready_nodes
+
+        return len(ready_nodes)
+
+    except Exception:
+
+        return 0
+
+
+# =========================
+# GET DIRECTORIES
+# =========================
+
+def get_directories():
+
+    base_dir = os.path.dirname(
+        os.path.abspath(__file__)
+    )
+
+    program_dir = os.path.join(
+        base_dir,
+        "programs"
+    )
+
+    data_dir = os.path.join(
+        base_dir,
+        "data"
+    )
+
+    result_dir = os.path.join(
+        base_dir,
+        "hasil"
+    )
+
+    return program_dir, data_dir, result_dir
+
+
+# =========================
+# COMMAND LIST
+# =========================
+
+def show_commands():
+
+    print("")
+    print("Commands:")
+    print("")
+
+    print("  upload_program    : kirim program (.py) ke semua node")
+    print("  upload_file       : kirim dataset ke node (auto split)")
+    print("  progress          : lihat progress processing node")
+    print("")
+
+    print("  status            : lihat node siap")
+    print("  nodes             : daftar node terhubung")
+    print("  tasks             : task yang sedang berjalan")
+    print("")
+
+    print("  ota               : update firmware node")
+    print("  help              : tampilkan bantuan")
+    print("  exit              : stop server")
+    print("")
+
+
+# =========================
 # PRINT BANNER
 # =========================
 
@@ -42,6 +114,10 @@ def print_banner():
 
     server_ip = get_server_ip()
 
+    node_count = get_node_count()
+
+    program_dir, data_dir, result_dir = get_directories()
+
     print("")
     print("================================================")
     print("           ESP32 CLUSTER MASTER SERVER")
@@ -49,31 +125,51 @@ def print_banner():
     print("")
 
     print("Services:")
-    print("  OTA Server        : starting")
-    print("  Coordinator       : starting")
+    print("  OTA Server        : running")
+    print("  Coordinator       : running")
     print("  Database          : ready")
     print("")
 
-    print("Commands:")
-    print("")
-    print("  upload_program    : kirim program (.py) ke node")
-    print("  upload_file       : kirim file data ke node")
-    print("  start_train       : jalankan program di node")
-    print("")
-    print("  status            : lihat node siap")
-    print("  nodes             : daftar node terhubung")
-    print("  tasks             : task yang sedang berjalan")
-    print("")
-    print("  ota               : update firmware node")
-    print("  help              : tampilkan bantuan")
-    print("  exit              : stop server")
-    print("")
+    show_commands()
 
     print("System:")
+    print("")
+
     print("  Version           : 1.0")
     print("  Mode              : development")
-    print("  Server IP         : {}".format(server_ip))
-    print("  Time              : {}".format(now))
+
+    print("  Server IP         :", server_ip)
+
+    print("  Active Nodes      :", node_count)
+
+    print("  MQTT Broker       : local")
+
+    print("")
+
+    print("Directories:")
+
+    print("  Programs          :", program_dir)
+
+    print("  Data              :", data_dir)
+
+    print("  Results           :", result_dir)
+
+    print("")
+
+    print("Runtime Config:")
+
+    print("  Chunk Size        : 8192 bytes")
+
+    print("  Auto Train        : enabled")
+
+    print("  Retry Limit       : enabled")
+
+    print("")
+
+    print("Time:")
+
+    print("  Start Time        :", now)
+
     print("")
 
     print("================================================")
