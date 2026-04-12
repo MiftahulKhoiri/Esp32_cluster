@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+import threading
 
 import paho.mqtt.client as mqtt
 
@@ -45,6 +46,8 @@ running_tasks = {}
 completed_tasks = {}
 
 node_last_seen = {}
+
+service_running = True
 
 
 # =========================
@@ -93,7 +96,7 @@ def check_node_health():
 
     dead_nodes = []
 
-    for node, last_seen in node_last_seen.items():
+    for node, last_seen in list(node_last_seen.items()):
 
         if now - last_seen > NODE_HEARTBEAT_TIMEOUT:
 
@@ -205,7 +208,7 @@ def check_timeouts():
 
     expired = []
 
-    for task_id, info in running_tasks.items():
+    for task_id, info in list(running_tasks.items()):
 
         start = info["start_time"]
 
@@ -229,12 +232,18 @@ def check_timeouts():
 
 def on_connect(client, userdata, flags, rc):
 
-    print("Server connected")
+    if rc == 0:
 
-    client.subscribe("cluster/status/+")
-    client.subscribe("cluster/task_status/+")
-    client.subscribe("cluster/result/+")
-    client.subscribe("cluster/progress/+")
+        print("Server connected")
+
+        client.subscribe("cluster/status/+")
+        client.subscribe("cluster/task_status/+")
+        client.subscribe("cluster/result/+")
+        client.subscribe("cluster/progress/+")
+
+    else:
+
+        print("MQTT connection failed:", rc)
 
 
 # =========================
@@ -255,9 +264,7 @@ def on_message(client, userdata, msg):
 
         return
 
-    # ---------------------
     # NODE STATUS
-    # ---------------------
 
     if topic.startswith("cluster/status"):
 
@@ -288,9 +295,7 @@ def on_message(client, userdata, msg):
 
             print("Node OFFLINE:", node)
 
-    # ---------------------
     # TASK STATUS
-    # ---------------------
 
     elif topic.startswith("cluster/task_status"):
 
@@ -301,46 +306,25 @@ def on_message(client, userdata, msg):
         if not task_id:
             return
 
-        print(
-            "Task status:",
-            task_id,
-            status
-        )
+        print("Task status:", task_id, status)
 
         if status == "running":
 
             mark_running(task_id)
 
-        if status in [
+        if status in ["done", "error", "timeout"]:
 
-            "done",
-            "error",
-            "timeout"
+            mark_completed(task_id, status)
 
-        ]:
-
-            mark_completed(
-                task_id,
-                status
-            )
-
-    # ---------------------
-    # PROGRESS UPDATE
-    # ---------------------
+    # PROGRESS
 
     elif topic.startswith("cluster/progress"):
 
         node = payload.get("node")
 
-        stage = payload.get(
-            "stage",
-            "unknown"
-        )
+        stage = payload.get("stage", "unknown")
 
-        progress = payload.get(
-            "progress",
-            0
-        )
+        progress = payload.get("progress", 0)
 
         print(
             "Progress:",
@@ -355,9 +339,7 @@ def on_message(client, userdata, msg):
             progress
         )
 
-    # ---------------------
-    # RESULT HANDLER
-    # ---------------------
+    # RESULT
 
     elif topic.startswith("cluster/result"):
 
@@ -403,7 +385,11 @@ client.on_connect = on_connect
 
 client.on_message = on_message
 
-client.connect(MQTT_BROKER)
+client.connect(
+    MQTT_BROKER,
+    1883,
+    60
+)
 
 client.loop_start()
 
@@ -475,14 +461,60 @@ def dispatch_task():
 # MAIN LOOP
 # =========================
 
-while True:
+def coordinator_loop():
 
-    dispatch_task()
+    print("[COORDINATOR] Loop started")
 
-    check_timeouts()
+    while service_running:
 
-    check_node_health()
+        try:
 
-    time.sleep(
-        TASK_DISPATCH_INTERVAL
+            dispatch_task()
+
+            check_timeouts()
+
+            check_node_health()
+
+            time.sleep(
+                TASK_DISPATCH_INTERVAL
+            )
+
+        except Exception as e:
+
+            print(
+                "[COORDINATOR ERROR]",
+                e
+            )
+
+            time.sleep(2)
+
+
+# =========================
+# SERVICE ENTRYPOINT
+# =========================
+
+def start_coordinator():
+
+    print("[SERVICE] Starting coordinator")
+
+    thread = threading.Thread(
+        target=coordinator_loop,
+        daemon=True
     )
+
+    thread.start()
+
+    print("[SERVICE] Coordinator running")
+
+
+# =========================
+# OPTIONAL STOP SERVICE
+# =========================
+
+def stop_coordinator():
+
+    global service_running
+
+    service_running = False
+
+    print("[SERVICE] Coordinator stopped")
