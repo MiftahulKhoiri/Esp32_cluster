@@ -1,0 +1,1 @@
+tempat menyimpan data sebelum di upload 
