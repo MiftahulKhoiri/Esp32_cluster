@@ -130,7 +130,7 @@ def print_banner():
     print("  Database          : ready")
     print("")
 
-    show_commands()
+   
 
     print("System:")
     print("")
