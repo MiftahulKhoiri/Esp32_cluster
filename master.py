@@ -1,6 +1,7 @@
 import time
 import signal
 import sys
+import os
 
 from toolsupdate.bootstrap import bootstrap
 
@@ -18,6 +19,54 @@ from raspberry.cli.banner import (
 
 
 services_running = True
+
+VENV_PATH = "venv"
+VENV_PYTHON = os.path.join(
+    VENV_PATH,
+    "bin",
+    "python3"
+)
+
+
+# =========================
+# VENV CHECK
+# =========================
+
+def ensure_venv():
+
+    # apakah sudah jalan di venv
+    if sys.prefix != sys.base_prefix:
+
+        return
+
+    print("")
+    print("[SYSTEM] Virtual environment not active")
+
+    if not os.path.exists(VENV_PYTHON):
+
+        print(
+            "[ERROR] venv not found:",
+            VENV_PYTHON
+        )
+
+        print(
+            "Create venv first:"
+        )
+
+        print(
+            "python3 -m venv venv"
+        )
+
+        sys.exit(1)
+
+    print(
+        "[SYSTEM] Restarting using venv..."
+    )
+
+    os.execv(
+        VENV_PYTHON,
+        [VENV_PYTHON] + sys.argv
+    )
 
 
 # =========================
@@ -92,8 +141,10 @@ def choose_start_mode():
             elif choice == "2":
 
                 print("")
-                print("Skipping update...")
+                print("Starting with virtual environment...")
                 print("")
+
+                ensure_venv()
 
                 return
 
@@ -122,20 +173,16 @@ def choose_start_mode():
 
 def main():
 
-    # tampilkan banner
     print_banner()
 
-    # pilih mode start
     choose_start_mode()
 
-    # start semua service
     start_services()
 
     print("")
     print("System ready")
     print("")
 
-    # command loop
     while services_running:
 
         try:
