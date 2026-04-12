@@ -2,8 +2,27 @@
 
 import time
 
-from raspberry.cli.upload_handler import handle_upload
 
+# =========================
+# IMPORT HANDLER
+# =========================
+
+from raspberry.cli.upload_program import (
+    upload_program
+)
+
+from raspberry.cli.upload_file import (
+    upload_file
+)
+
+from raspberry.cli.start_train import (
+    start_train
+)
+
+
+# =========================
+# COMMAND LISTENER
+# =========================
 
 def command_listener(services_running):
 
@@ -13,74 +32,172 @@ def command_listener(services_running):
 
             cmd = input("> ").strip().lower()
 
+            # =====================
             # EXIT
+            # =====================
 
             if cmd == "exit":
 
                 return "exit"
 
-            # UPLOAD
+            # =====================
+            # UPLOAD PROGRAM
+            # =====================
 
-            elif cmd == "upload":
+            elif cmd == "upload_program":
 
-                handle_upload()
+                upload_program()
 
+            # =====================
+            # UPLOAD FILE
+            # =====================
+
+            elif cmd == "upload_file":
+
+                upload_file()
+
+            # =====================
+            # START TRAIN
+            # =====================
+
+            elif cmd == "start_train":
+
+                start_train()
+
+            # =====================
+            # OTA UPDATE
+            # =====================
+
+            elif cmd == "ota":
+
+                try:
+
+                    from raspberry.coordinator import client
+
+                    print("Sending OTA command")
+
+                    client.publish(
+
+                        "cluster/ota/update",
+
+                        '{"command":"update"}'
+
+                    )
+
+                except Exception as e:
+
+                    print("OTA failed:", e)
+
+            # =====================
             # STATUS
+            # =====================
 
             elif cmd == "status":
 
-                from raspberry.coordinator import ready_nodes
+                try:
 
-                print("")
-                print("Ready nodes:")
-                print(ready_nodes)
-                print("")
+                    from raspberry.coordinator import ready_nodes
 
+                    print("")
+                    print("Ready nodes:")
+                    print(ready_nodes)
+                    print("")
+
+                except Exception as e:
+
+                    print("Status error:", e)
+
+            # =====================
             # NODES
+            # =====================
 
             elif cmd == "nodes":
 
-                from raspberry.coordinator import node_last_seen
+                try:
 
-                print("")
-                print("Nodes:")
+                    from raspberry.coordinator import node_last_seen
 
-                if not node_last_seen:
+                    print("")
+                    print("Nodes:")
 
-                    print("  (no nodes connected)")
+                    if not node_last_seen:
 
-                for node in node_last_seen:
+                        print("  (no nodes connected)")
 
-                    print("  -", node)
+                    for node in node_last_seen:
 
-                print("")
+                        print("  -", node)
 
+                    print("")
+
+                except Exception as e:
+
+                    print("Nodes error:", e)
+
+            # =====================
             # TASKS
+            # =====================
 
             elif cmd == "tasks":
 
-                from raspberry.coordinator import running_tasks
+                try:
+
+                    from raspberry.coordinator import running_tasks
+
+                    print("")
+                    print("Running tasks:")
+
+                    if not running_tasks:
+
+                        print("  (no running tasks)")
+
+                    for task_id in running_tasks:
+
+                        print("  -", task_id)
+
+                    print("")
+
+                except Exception as e:
+
+                    print("Tasks error:", e)
+
+            # =====================
+            # HELP
+            # =====================
+
+            elif cmd == "help":
 
                 print("")
-                print("Running tasks:")
-
-                if not running_tasks:
-
-                    print("  (no running tasks)")
-
-                for task_id in running_tasks:
-
-                    print("  -", task_id)
-
+                print("Commands:")
                 print("")
+                print(" upload_program   : kirim program ke node")
+                print(" upload_file      : kirim file data ke node")
+                print(" start_train      : jalankan program di node")
+                print("")
+                print(" status           : lihat node siap")
+                print(" nodes            : daftar node")
+                print(" tasks            : task berjalan")
+                print("")
+                print(" ota              : update firmware")
+                print(" exit             : keluar")
+                print("")
+
+            # =====================
+            # EMPTY
+            # =====================
 
             elif cmd == "":
 
                 continue
 
+            # =====================
+            # UNKNOWN
+            # =====================
+
             else:
 
                 print("Unknown command")
+                print("Type 'help'")
 
         except Exception as e:
 
