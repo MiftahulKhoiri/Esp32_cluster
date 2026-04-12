@@ -35,6 +35,7 @@ def print_banner():
     print("  nodes             : list connected nodes")
     print("  tasks             : show running tasks")
     print("  ota               : trigger OTA update")
+    print("  upload            : upload program ke node")
     print("  restart           : restart services")
     print("  exit              : stop server")
     print("")
@@ -262,6 +263,67 @@ def command_listener():
                     print("Tasks error:", e)
 
             # =====================
+            # UPLOAD PROGRAM
+            # =====================
+
+            elif cmd == "upload":
+
+                try:
+
+                    print("")
+
+                    filename = input(
+                        "Masukkan nama file program (.py): "
+                    ).strip()
+
+                    # validasi file
+
+                    if not filename.endswith(".py"):
+
+                        print(
+                            "File harus berformat .py"
+                        )
+
+                        continue
+
+                    # baca file
+
+                    with open(filename, "r") as f:
+
+                        code = f.read()
+
+                    from raspberry.coordinator import add_task
+
+                    task = {
+
+                        "type": "upload_program",
+
+                        "filename": filename,
+
+                        "code": code
+
+                    }
+
+                    add_task(task)
+
+                    print("")
+                    print("Program berhasil dikirim ke node")
+                    print("")
+
+                except FileNotFoundError:
+
+                    print(
+                        "File tidak ditemukan"
+                    )
+
+                except Exception as e:
+
+                    print(
+                        "Upload gagal:",
+                        e
+                    )
+
+            # =====================
             # RESTART
             # =====================
 
@@ -286,6 +348,7 @@ def command_listener():
                 print(" nodes")
                 print(" tasks")
                 print(" ota")
+                print(" upload")
                 print(" restart")
                 print(" exit")
                 print("")
@@ -305,7 +368,6 @@ def command_listener():
             else:
 
                 print("Unknown command")
-
                 print("Type 'help'")
 
         except KeyboardInterrupt:
