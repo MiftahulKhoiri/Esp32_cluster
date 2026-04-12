@@ -2,6 +2,8 @@ import time
 import os
 import base64
 import sys
+import ujson
+import machine
 
 try:
     import led
@@ -19,6 +21,8 @@ DATA_DIR = "data"
 
 DEFAULT_TIMEOUT = 10
 
+TRAINING_TIMEOUT = 300   # seconds watchdog
+
 
 # =========================
 # INIT DIRECTORIES
@@ -26,21 +30,15 @@ DEFAULT_TIMEOUT = 10
 
 def init_directories():
 
-    try:
+    if PROGRAM_DIR not in os.listdir():
+        os.mkdir(PROGRAM_DIR)
 
-        if PROGRAM_DIR not in os.listdir():
-            os.mkdir(PROGRAM_DIR)
-
-        if DATA_DIR not in os.listdir():
-            os.mkdir(DATA_DIR)
-
-    except Exception as e:
-
-        print("Directory init error:", e)
+    if DATA_DIR not in os.listdir():
+        os.mkdir(DATA_DIR)
 
 
 # =========================
-# PROGRESS SENDER
+# PROGRESS
 # =========================
 
 def send_progress(stage, percent):
@@ -57,8 +55,6 @@ def send_progress(stage, percent):
             "progress": percent
 
         }
-
-        import ujson
 
         client.publish(
 
@@ -78,120 +74,138 @@ def send_progress(stage, percent):
 
 def reload_module(module_name):
 
-    try:
+    if module_name in sys.modules:
 
-        if module_name in sys.modules:
+        print("Reloading:", module_name)
 
-            print(
-                "Reloading module:",
-                module_name
-            )
-
-            del sys.modules[module_name]
-
-        return True
-
-    except Exception as e:
-
-        print(
-            "Reload module error:",
-            e
-        )
-
-        return False
+        del sys.modules[module_name]
 
 
 # =========================
-# MAIN ENTRY
+# RESUME META
+# =========================
+
+def get_meta_path(filename):
+
+    return DATA_DIR + "/" + filename + ".meta"
+
+
+def load_last_chunk(filename):
+
+    path = get_meta_path(filename)
+
+    if path not in os.listdir(DATA_DIR):
+
+        return 0
+
+    try:
+
+        with open(path, "r") as f:
+
+            meta = ujson.loads(f.read())
+
+            return meta.get("last_chunk", 0)
+
+    except:
+
+        return 0
+
+
+def save_last_chunk(filename, chunk):
+
+    path = get_meta_path(filename)
+
+    try:
+
+        with open(path, "w") as f:
+
+            f.write(
+
+                ujson.dumps({
+
+                    "last_chunk": chunk
+
+                })
+
+            )
+
+    except Exception as e:
+
+        print("Meta save error:", e)
+
+
+def clear_meta(filename):
+
+    path = get_meta_path(filename)
+
+    try:
+
+        if filename + ".meta" in os.listdir(DATA_DIR):
+
+            os.remove(path)
+
+    except:
+
+        pass
+
+
+# =========================
+# WATCHDOG
+# =========================
+
+def start_watchdog():
+
+    wdt = machine.WDT(timeout=TRAINING_TIMEOUT * 1000)
+
+    return wdt
+
+
+# =========================
+# MAIN TASK
 # =========================
 
 def run_task(data):
 
-    start_time = time.time()
+    init_directories()
 
     try:
-
-        init_directories()
 
         if LED_AVAILABLE:
             led.set_state(led.STATE_RUNNING)
 
-        if not isinstance(data, dict):
-
-            return error_result(
-                "unknown",
-                "Invalid task format"
-            )
-
-        task_id = data.get(
-            "task_id",
-            generate_task_id()
-        )
-
-        timeout = int(
-            data.get(
-                "timeout",
-                DEFAULT_TIMEOUT
-            )
-        )
-
         task_type = data.get("type")
-
-        if not task_type:
-
-            return error_result(
-                task_id,
-                "Missing type field"
-            )
-
-        # =====================
-        # DISPATCH
-        # =====================
 
         if task_type == "upload_program":
 
-            result = handle_upload_program(data)
+            return handle_upload_program(data)
 
         elif task_type == "upload_chunk":
 
-            result = handle_upload_chunk(data)
+            return handle_upload_chunk(data)
 
         elif task_type == "train":
 
-            result = handle_training(data)
-
-        elif task_type == "status":
-
-            result = task_status()
+            return handle_training(data)
 
         else:
 
-            return error_result(
-                task_id,
-                "Unknown task: {}".format(task_type)
-            )
+            return {
 
-        duration = time.time() - start_time
+                "status": "error",
+                "message": "Unknown task"
 
-        if duration > timeout:
-
-            return timeout_result(
-                task_id,
-                duration
-            )
-
-        return success_result(
-            task_id,
-            result,
-            duration
-        )
+            }
 
     except Exception as e:
 
-        return error_result(
-            task_id,
-            str(e)
-        )
+        print("Task error:", e)
+
+        return {
+
+            "status": "error",
+            "message": str(e)
+
+        }
 
     finally:
 
@@ -200,306 +214,204 @@ def run_task(data):
 
 
 # =========================
-# HANDLE UPLOAD PROGRAM
+# UPLOAD PROGRAM
 # =========================
 
 def handle_upload_program(task):
 
-    try:
+    filename = task.get("filename")
 
-        filename = task.get("filename")
+    data_base64 = task.get("data")
 
-        data_base64 = task.get("data")
+    send_progress("upload_program", 0)
 
-        if not filename:
+    path = PROGRAM_DIR + "/" + filename
 
-            raise ValueError(
-                "filename missing"
-            )
+    data = base64.b64decode(data_base64)
 
-        send_progress(
-            "upload_program",
-            0
-        )
+    with open(path, "wb") as f:
 
-        file_path = PROGRAM_DIR + "/" + filename
+        f.write(data)
 
-        data = base64.b64decode(
-            data_base64
-        )
+    module_name = filename.replace(".py", "")
 
-        with open(
-            file_path,
-            "wb"
-        ) as f:
+    reload_module(module_name)
 
-            f.write(data)
+    send_progress("upload_program", 100)
 
-        module_name = filename.replace(
-            ".py",
-            ""
-        )
+    print("Program saved:", filename)
 
-        reload_module(
-            module_name
-        )
+    return {
 
-        send_progress(
-            "upload_program",
-            100
-        )
+        "status": "program_updated"
 
-        print(
-            "Program updated:",
-            file_path
-        )
-
-        return {
-
-            "status": "program_updated",
-            "filename": filename
-
-        }
-
-    except Exception as e:
-
-        print(
-            "Upload program error:",
-            e
-        )
-
-        raise
+    }
 
 
 # =========================
-# HANDLE FILE CHUNK
+# UPLOAD CHUNK (RESUME)
 # =========================
 
 def handle_upload_chunk(task):
 
-    try:
+    filename = task.get("filename")
 
-        filename = task.get("filename")
+    chunk_index = task.get("chunk_index")
 
-        chunk_index = task.get(
-            "chunk_index"
-        )
+    total_chunks = task.get("total_chunks")
 
-        total_chunks = task.get(
-            "total_chunks"
-        )
+    auto_train = task.get("auto_train", False)
 
-        data_base64 = task.get("data")
+    last_chunk = load_last_chunk(filename)
 
-        auto_train = task.get(
-            "auto_train",
-            False
-        )
-
-        if not filename:
-
-            raise ValueError(
-                "filename missing"
-            )
-
-        file_path = DATA_DIR + "/" + filename
-
-        data = base64.b64decode(
-            data_base64
-        )
-
-        mode = "ab"
-
-        if chunk_index == 1:
-            mode = "wb"
-
-        with open(
-            file_path,
-            mode
-        ) as f:
-
-            f.write(data)
-
-        percent = int(
-            (chunk_index / total_chunks) * 100
-        )
-
-        send_progress(
-            "upload",
-            percent
-        )
+    if chunk_index <= last_chunk:
 
         print(
-            "Chunk",
-            chunk_index,
-            "/",
-            total_chunks
+
+            "Skip chunk",
+            chunk_index
+
         )
-
-        # =====================
-        # FILE COMPLETE
-        # =====================
-
-        if chunk_index == total_chunks:
-
-            print(
-                "File completed:",
-                filename
-            )
-
-            if auto_train:
-
-                return handle_training({
-
-                    "program": "train_model.py"
-
-                })
 
         return {
 
-            "status": "chunk_received"
+            "status": "skip"
 
         }
 
-    except Exception as e:
+    data = base64.b64decode(
 
-        print(
-            "Upload chunk error:",
-            e
-        )
+        task.get("data")
 
-        raise
+    )
+
+    path = DATA_DIR + "/" + filename
+
+    mode = "ab"
+
+    if chunk_index == 1:
+        mode = "wb"
+
+    with open(path, mode) as f:
+
+        f.write(data)
+
+    save_last_chunk(
+
+        filename,
+        chunk_index
+
+    )
+
+    percent = int(
+
+        (chunk_index / total_chunks) * 100
+
+    )
+
+    send_progress(
+
+        "upload",
+        percent
+
+    )
+
+    print(
+
+        "Chunk",
+        chunk_index,
+        "/",
+        total_chunks
+
+    )
+
+    # FILE COMPLETE
+
+    if chunk_index == total_chunks:
+
+        clear_meta(filename)
+
+        print("File complete")
+
+        if auto_train:
+
+            return handle_training({
+
+                "program": "train_model.py"
+
+            })
+
+    return {
+
+        "status": "chunk_received"
+
+    }
 
 
 # =========================
-# HANDLE TRAINING
+# TRAINING + WATCHDOG
 # =========================
 
 def handle_training(task):
 
-    try:
+    program = task.get(
 
-        program = task.get(
-            "program",
-            "train_model.py"
+        "program",
+        "train_model.py"
+
+    )
+
+    module_name = program.replace(
+
+        ".py",
+        ""
+
+    )
+
+    if PROGRAM_DIR not in sys.path:
+
+        sys.path.append(
+
+            PROGRAM_DIR
+
         )
 
-        module_name = program.replace(
-            ".py",
-            ""
-        )
+    reload_module(module_name)
 
-        if PROGRAM_DIR not in sys.path:
+    wdt = start_watchdog()
 
-            sys.path.append(
-                PROGRAM_DIR
-            )
+    send_progress("training", 10)
 
-        reload_module(
-            module_name
-        )
+    module = __import__(module_name)
 
-        send_progress(
-            "training",
-            10
-        )
+    send_progress("training", 40)
 
-        module = __import__(
-            module_name
-        )
+    start_time = time.time()
 
-        send_progress(
-            "training",
-            40
-        )
+    result = None
+
+    while True:
+
+        wdt.feed()
 
         result = module.run()
 
-        send_progress(
-            "training",
-            100
-        )
+        break
 
-        print(
-            "Training completed"
-        )
+    duration = time.time() - start_time
 
-        return {
+    send_progress("training", 100)
 
-            "status": "training_done",
-            "result": result
+    print(
 
-        }
+        "Training done",
+        duration
 
-    except Exception as e:
-
-        print(
-            "Training error:",
-            e
-        )
-
-        raise
-
-
-# =========================
-# TASK STATUS
-# =========================
-
-def task_status():
-
-    uptime = time.ticks_ms() // 1000
+    )
 
     return {
 
-        "uptime_seconds": uptime
-
-    }
-
-
-# =========================
-# RESPONSE HELPERS
-# =========================
-
-def success_result(task_id, result, duration):
-
-    return {
-
-        "task_id": task_id,
-        "status": "done",
-        "duration": duration,
+        "status": "training_done",
         "result": result
 
     }
-
-
-def timeout_result(task_id, duration):
-
-    return {
-
-        "task_id": task_id,
-        "status": "timeout",
-        "duration": duration
-
-    }
-
-
-def error_result(task_id, message):
-
-    return {
-
-        "task_id": task_id,
-        "status": "error",
-        "message": message
-
-    }
-
-
-# =========================
-# TASK ID
-# =========================
-
-def generate_task_id():
-
-    return "local_" + str(
-        time.ticks_ms()
-    )
