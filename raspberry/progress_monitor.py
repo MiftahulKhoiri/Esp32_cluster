@@ -3,7 +3,7 @@ import threading
 
 
 # =========================
-# GLOBAL STATE
+# STATE
 # =========================
 
 node_progress = {}
@@ -12,30 +12,68 @@ lock = threading.Lock()
 
 
 # =========================
-# UPDATE PROGRESS
+# UPDATE
 # =========================
 
 def update_progress(
     node,
-    stage,
-    progress
+    payload
 ):
 
     with lock:
 
         node_progress[node] = {
 
-            "stage": stage,
-            "progress": progress,
-            "time": time.strftime(
-                "%H:%M:%S"
-            )
+            "stage": payload.get(
+                "stage",
+                "unknown"
+            ),
+
+            "progress": payload.get(
+                "progress",
+                0
+            ),
+
+            "memory_free_kb":
+                payload.get(
+                    "memory_free_kb"
+                ),
+
+            "memory_used_kb":
+                payload.get(
+                    "memory_used_kb"
+                ),
+
+            "cpu_percent":
+                payload.get(
+                    "cpu_percent"
+                ),
+
+            "flash_free_kb":
+                payload.get(
+                    "flash_free_kb"
+                ),
+
+            "flash_percent":
+                payload.get(
+                    "flash_percent"
+                ),
+
+            "temperature":
+                payload.get(
+                    "temperature"
+                ),
+
+            "time":
+                time.strftime(
+                    "%H:%M:%S"
+                )
 
         }
 
 
 # =========================
-# PRINT PROGRESS
+# PRINT
 # =========================
 
 def print_progress():
@@ -44,50 +82,83 @@ def print_progress():
 
         print("")
         print(
-            "=============================="
+            "===================================="
         )
         print(
-            " NODE PROGRESS MONITOR"
+            " NODE SYSTEM MONITOR"
         )
         print(
-            "=============================="
+            "===================================="
         )
         print("")
 
         if not node_progress:
 
             print(
-                "Belum ada progress"
+                "Belum ada data"
             )
+
+            return
 
         for node, info in node_progress.items():
 
             print(node)
 
             print(
-                "  stage    :",
+                "  stage      :",
                 info["stage"]
             )
 
             print(
-                "  progress :",
+                "  progress   :",
                 str(info["progress"]) + "%"
             )
 
+            if info["memory_free_kb"] is not None:
+
+                print(
+                    "  RAM free   :",
+                    info["memory_free_kb"],
+                    "KB"
+                )
+
+                print(
+                    "  RAM used   :",
+                    info["memory_used_kb"],
+                    "KB"
+                )
+
+            if info["cpu_percent"] is not None:
+
+                print(
+                    "  CPU        :",
+                    str(info["cpu_percent"]) + "%"
+                )
+
+            if info["flash_percent"] is not None:
+
+                print(
+                    "  Flash free :",
+                    info["flash_free_kb"],
+                    "KB"
+                )
+
+                print(
+                    "  Flash used :",
+                    str(info["flash_percent"]) + "%"
+                )
+
+            if info["temperature"] is not None:
+
+                print(
+                    "  Temp       :",
+                    str(info["temperature"]),
+                    "C"
+                )
+
             print(
-                "  update   :",
+                "  update     :",
                 info["time"]
             )
 
             print("")
-
-
-# =========================
-# RESET
-# =========================
-
-def reset_progress():
-
-    with lock:
-
-        node_progress.clear()
