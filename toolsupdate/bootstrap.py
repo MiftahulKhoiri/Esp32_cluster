@@ -92,16 +92,3 @@ def bootstrap1():
 
     if not in_virtualenv():
         restart_in_venv()
-
-    # ===============================
-    # 2. Dependency
-    # ===============================
-    install_requirements()
-
-    # ===============================
-    # 3. Auto update
-    # ===============================
-    updater = SelfUpdater(repo_dir=str(BASE_DIR))
-    if updater.update_if_needed():
-        log.warning("Restart setelah update...")
-        restart_in_venv()
