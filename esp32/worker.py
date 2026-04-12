@@ -1,5 +1,7 @@
 import time
-import random
+import os
+import base64
+import sys
 
 try:
     import led
@@ -12,7 +14,58 @@ except:
 # CONFIG
 # =========================
 
+PROGRAM_DIR = "programs"
+DATA_DIR = "data"
+
 DEFAULT_TIMEOUT = 10
+
+
+# =========================
+# INIT DIRECTORIES
+# =========================
+
+def init_directories():
+
+    if PROGRAM_DIR not in os.listdir():
+
+        os.mkdir(PROGRAM_DIR)
+
+    if DATA_DIR not in os.listdir():
+
+        os.mkdir(DATA_DIR)
+
+
+# =========================
+# PROGRESS SENDER
+# =========================
+
+def send_progress(stage, percent):
+
+    try:
+
+        from config import NODE_ID
+        from main import client
+
+        payload = {
+
+            "node": NODE_ID,
+            "stage": stage,
+            "progress": percent
+
+        }
+
+        import ujson
+
+        client.publish(
+
+            "cluster/progress/" + NODE_ID,
+            ujson.dumps(payload)
+
+        )
+
+    except Exception as e:
+
+        print("Progress error:", e)
 
 
 # =========================
@@ -25,14 +78,16 @@ def run_task(data):
 
     try:
 
+        init_directories()
+
         if LED_AVAILABLE:
             led.set_state(led.STATE_RUNNING)
 
         if not isinstance(data, dict):
 
             return error_result(
-                task_id="unknown",
-                message="Invalid task format"
+                "unknown",
+                "Invalid task format"
             )
 
         task_id = data.get(
@@ -47,26 +102,30 @@ def run_task(data):
             )
         )
 
-        task_type = data.get("task")
+        task_type = data.get("type")
 
-        if task_type is None:
+        if not task_type:
 
             return error_result(
                 task_id,
-                "Missing task field"
+                "Missing type field"
             )
 
         # =====================
         # DISPATCH
         # =====================
 
-        if task_type == "random":
+        if task_type == "upload_program":
 
-            result = task_random(data)
+            result = handle_upload_program(data)
 
-        elif task_type == "sum":
+        elif task_type == "upload_chunk":
 
-            result = task_sum(data)
+            result = handle_upload_chunk(data)
+
+        elif task_type == "train":
+
+            result = handle_training(data)
 
         elif task_type == "status":
 
@@ -78,10 +137,6 @@ def run_task(data):
                 task_id,
                 "Unknown task: {}".format(task_type)
             )
-
-        # =====================
-        # TIMEOUT CHECK
-        # =====================
 
         duration = time.time() - start_time
 
@@ -112,52 +167,211 @@ def run_task(data):
 
 
 # =========================
-# TASK: RANDOM NUMBER
+# HANDLE UPLOAD PROGRAM
 # =========================
 
-def task_random(data):
+def handle_upload_program(task):
 
-    count = int(data.get("count", 10))
+    try:
 
-    if count <= 0:
-        count = 1
+        filename = task.get("filename")
 
-    result = []
+        data_base64 = task.get("data")
 
-    for _ in range(count):
+        if not filename:
 
-        number = random.randint(1, 6)
+            raise ValueError(
+                "filename missing"
+            )
 
-        result.append(number)
+        send_progress("upload_program", 0)
 
-    return result
+        file_path = PROGRAM_DIR + "/" + filename
 
-
-# =========================
-# TASK: SUM NUMBERS
-# =========================
-
-def task_sum(data):
-
-    numbers = data.get("numbers", [])
-
-    if not isinstance(numbers, list):
-
-        raise ValueError(
-            "numbers must be list"
+        data = base64.b64decode(
+            data_base64
         )
 
-    total = 0
+        with open(
+            file_path,
+            "wb"
+        ) as f:
 
-    for n in numbers:
+            f.write(data)
 
-        total += n
+        send_progress("upload_program", 100)
 
-    return total
+        print(
+            "Program saved:",
+            file_path
+        )
+
+        return {
+
+            "status": "program_saved",
+            "filename": filename
+
+        }
+
+    except Exception as e:
+
+        print("Upload program error:", e)
+
+        raise
 
 
 # =========================
-# TASK: NODE STATUS
+# HANDLE FILE CHUNK
+# =========================
+
+def handle_upload_chunk(task):
+
+    try:
+
+        filename = task.get("filename")
+
+        chunk_index = task.get(
+            "chunk_index"
+        )
+
+        total_chunks = task.get(
+            "total_chunks"
+        )
+
+        data_base64 = task.get("data")
+
+        auto_train = task.get(
+            "auto_train",
+            False
+        )
+
+        file_path = DATA_DIR + "/" + filename
+
+        data = base64.b64decode(
+            data_base64
+        )
+
+        mode = "ab"
+
+        if chunk_index == 1:
+
+            mode = "wb"
+
+        with open(
+            file_path,
+            mode
+        ) as f:
+
+            f.write(data)
+
+        percent = int(
+            (chunk_index / total_chunks) * 100
+        )
+
+        send_progress(
+            "upload",
+            percent
+        )
+
+        print(
+            "Chunk",
+            chunk_index,
+            "/",
+            total_chunks
+        )
+
+        # AUTO TRAIN
+        if chunk_index == total_chunks:
+
+            print("File completed")
+
+            if auto_train:
+
+                send_progress(
+                    "training",
+                    0
+                )
+
+                return handle_training({
+
+                    "program": "train_model.py"
+
+                })
+
+        return {
+
+            "status": "chunk_received"
+
+        }
+
+    except Exception as e:
+
+        print("Upload chunk error:", e)
+
+        raise
+
+
+# =========================
+# HANDLE TRAINING
+# =========================
+
+def handle_training(task):
+
+    try:
+
+        program = task.get(
+            "program",
+            "train_model.py"
+        )
+
+        module_name = program.replace(
+            ".py",
+            ""
+        )
+
+        if PROGRAM_DIR not in sys.path:
+
+            sys.path.append(
+                PROGRAM_DIR
+            )
+
+        send_progress(
+            "training",
+            10
+        )
+
+        module = __import__(
+            module_name
+        )
+
+        send_progress(
+            "training",
+            40
+        )
+
+        result = module.run()
+
+        send_progress(
+            "training",
+            100
+        )
+
+        return {
+
+            "status": "training_done",
+            "result": result
+
+        }
+
+    except Exception as e:
+
+        print("Training error:", e)
+
+        raise
+
+
+# =========================
+# TASK STATUS
 # =========================
 
 def task_status():
@@ -167,6 +381,7 @@ def task_status():
     return {
 
         "uptime_seconds": uptime
+
     }
 
 
@@ -179,11 +394,8 @@ def success_result(task_id, result, duration):
     return {
 
         "task_id": task_id,
-
         "status": "done",
-
         "duration": duration,
-
         "result": result
 
     }
@@ -194,9 +406,7 @@ def timeout_result(task_id, duration):
     return {
 
         "task_id": task_id,
-
         "status": "timeout",
-
         "duration": duration
 
     }
@@ -207,16 +417,14 @@ def error_result(task_id, message):
     return {
 
         "task_id": task_id,
-
         "status": "error",
-
         "message": message
 
     }
 
 
 # =========================
-# TASK ID GENERATOR
+# TASK ID
 # =========================
 
 def generate_task_id():
