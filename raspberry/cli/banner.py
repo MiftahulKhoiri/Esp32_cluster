@@ -76,31 +76,6 @@ def get_directories():
     return program_dir, data_dir, result_dir
 
 
-# =========================
-# COMMAND LIST
-# =========================
-
-def show_commands():
-
-    print("")
-    print("Commands:")
-    print("")
-
-    print("  upload_program    : kirim program (.py) ke semua node")
-    print("  upload_file       : kirim dataset ke node (auto split)")
-    print("  progress          : lihat progress processing node")
-    print("")
-
-    print("  status            : lihat node siap")
-    print("  nodes             : daftar node terhubung")
-    print("  tasks             : task yang sedang berjalan")
-    print("")
-
-    print("  ota               : update firmware node")
-    print("  help              : tampilkan bantuan")
-    print("  exit              : stop server")
-    print("")
-
 
 # =========================
 # PRINT BANNER
