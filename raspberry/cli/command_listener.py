@@ -50,43 +50,43 @@ def show_help():
     print("================================================")
     print("")
 
-    print(" 0  = exit")
+    print(" [0]  = (exit)")
     print("      Menghentikan server dan semua service")
     print("")
 
-    print(" 1  = upload_program")
+    print(" [1]  = (upload_program)")
     print("      Mengirim file program (.py) ke semua node")
     print("      Digunakan sebelum menjalankan training")
     print("")
 
-    print(" 2  = upload_file")
+    print(" [2]  = (upload_file)")
     print("      Mengirim dataset ke node")
     print("      File akan otomatis di-split menjadi beberapa bagian")
     print("")
 
-    print(" 3  = start_train")
+    print(" [3]  = (start_train)")
     print("      Menjalankan program yang sudah di-upload")
     print("      Node akan mulai memproses data")
     print("")
 
-    print(" 4  = ota update")
+    print(" [4]  = (ota update)")
     print("      Mengirim perintah update firmware ke semua node")
     print("      Node akan download firmware terbaru lalu restart")
     print("")
 
-    print(" 5  = status")
+    print(" [5]  = (status)")
     print("      Menampilkan daftar node yang siap menerima task")
     print("")
 
-    print(" 6  = nodes")
-    print("      Menampilkan semua node yang terhubung ke server")
+    print(" [6]  = (nodes)")
+    print("      Menampilkan semua node yang aktif dan terhubung ke server")
     print("")
 
-    print(" 7  = tasks")
+    print(" [7]  = (tasks)")
     print("      Menampilkan task yang sedang berjalan")
     print("")
 
-    print(" help")
+    print(" [help] = (help)")
     print("      Menampilkan menu bantuan ini")
     print("")
 
