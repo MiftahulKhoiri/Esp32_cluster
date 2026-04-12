@@ -11,6 +11,8 @@ from config import (
 
 from worker import run_task
 
+from memory_monitor import send_memory_status
+
 from connectionwifi import (
     connect_wifi,
     ensure_connection
@@ -406,6 +408,7 @@ def main():
             client.check_msg()
 
             send_heartbeat()
+            send_memory_status()
 
         except Exception as e:
 
