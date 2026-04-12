@@ -21,6 +21,11 @@ from raspberry.database import (
     increment_retry
 )
 
+# NEW
+from raspberry.result_handler import (
+    handle_result
+)
+
 
 # =========================
 # STATE
@@ -263,8 +268,6 @@ def on_message(client, userdata, msg):
         if not node:
             return
 
-        # update heartbeat
-
         node_last_seen[node] = time.time()
 
         if status in ["ready", "online"]:
@@ -286,10 +289,10 @@ def on_message(client, userdata, msg):
             print("Node OFFLINE:", node)
 
     # ---------------------
-    # TASK STATUS (ACK)
+    # TASK STATUS
     # ---------------------
 
-    if topic.startswith("cluster/task_status"):
+    elif topic.startswith("cluster/task_status"):
 
         task_id = payload.get("task_id")
 
@@ -322,14 +325,41 @@ def on_message(client, userdata, msg):
             )
 
     # ---------------------
-    # TASK RESULT
+    # RESULT HANDLER (NEW)
     # ---------------------
 
-    if topic.startswith("cluster/result"):
+    elif topic.startswith("cluster/result"):
 
         print("Result received")
 
-        print(payload)
+        node = payload.get("node")
+
+        result = payload.get("result")
+
+        if not node or not result:
+
+            print("Invalid result payload")
+
+            return
+
+        filename = result.get(
+            "filename",
+            "result.csv"
+        )
+
+        data = result.get("data")
+
+        if not data:
+
+            print("Result data kosong")
+
+            return
+
+        handle_result(
+            node,
+            filename,
+            data
+        )
 
 
 # =========================
