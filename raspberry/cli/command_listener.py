@@ -21,6 +21,49 @@ from raspberry.cli.start_train import (
 
 
 # =========================
+# COMMAND MAP
+# =========================
+
+COMMAND_MAP = {
+
+    "0": "exit",
+    "1": "upload_program",
+    "2": "upload_file",
+    "3": "start_train",
+    "4": "ota",
+    "5": "status",
+    "6": "nodes",
+    "7": "tasks"
+
+}
+
+
+# =========================
+# HELP MENU
+# =========================
+
+def show_help():
+
+    print("")
+    print("Commands:")
+    print("")
+    print(" 0  = exit")
+    print("")
+    print(" 1  = upload_program")
+    print(" 2  = upload_file")
+    print(" 3  = start_train")
+    print("")
+    print(" 4  = ota update")
+    print("")
+    print(" 5  = status")
+    print(" 6  = nodes")
+    print(" 7  = tasks")
+    print("")
+    print(" help = tampilkan bantuan")
+    print("")
+
+
+# =========================
 # COMMAND LISTENER
 # =========================
 
@@ -33,10 +76,32 @@ def command_listener(services_running):
             cmd = input("> ").strip().lower()
 
             # =====================
+            # HELP
+            # =====================
+
+            if cmd == "help":
+
+                show_help()
+
+                continue
+
+            # =====================
+            # VALIDATE NUMBER
+            # =====================
+
+            if cmd not in COMMAND_MAP:
+
+                print("Unknown command")
+                print("Type 'help'")
+                continue
+
+            action = COMMAND_MAP[cmd]
+
+            # =====================
             # EXIT
             # =====================
 
-            if cmd == "exit":
+            if action == "exit":
 
                 return "exit"
 
@@ -44,7 +109,7 @@ def command_listener(services_running):
             # UPLOAD PROGRAM
             # =====================
 
-            elif cmd == "upload_program":
+            elif action == "upload_program":
 
                 upload_program()
 
@@ -52,7 +117,7 @@ def command_listener(services_running):
             # UPLOAD FILE
             # =====================
 
-            elif cmd == "upload_file":
+            elif action == "upload_file":
 
                 upload_file()
 
@@ -60,7 +125,7 @@ def command_listener(services_running):
             # START TRAIN
             # =====================
 
-            elif cmd == "start_train":
+            elif action == "start_train":
 
                 start_train()
 
@@ -68,7 +133,7 @@ def command_listener(services_running):
             # OTA UPDATE
             # =====================
 
-            elif cmd == "ota":
+            elif action == "ota":
 
                 try:
 
@@ -92,7 +157,7 @@ def command_listener(services_running):
             # STATUS
             # =====================
 
-            elif cmd == "status":
+            elif action == "status":
 
                 try:
 
@@ -111,7 +176,7 @@ def command_listener(services_running):
             # NODES
             # =====================
 
-            elif cmd == "nodes":
+            elif action == "nodes":
 
                 try:
 
@@ -138,7 +203,7 @@ def command_listener(services_running):
             # TASKS
             # =====================
 
-            elif cmd == "tasks":
+            elif action == "tasks":
 
                 try:
 
@@ -160,44 +225,6 @@ def command_listener(services_running):
                 except Exception as e:
 
                     print("Tasks error:", e)
-
-            # =====================
-            # HELP
-            # =====================
-
-            elif cmd == "help":
-
-                print("")
-                print("Commands:")
-                print("")
-                print(" upload_program   : kirim program ke node")
-                print(" upload_file      : kirim file data ke node")
-                print(" start_train      : jalankan program di node")
-                print("")
-                print(" status           : lihat node siap")
-                print(" nodes            : daftar node")
-                print(" tasks            : task berjalan")
-                print("")
-                print(" ota              : update firmware")
-                print(" exit             : keluar")
-                print("")
-
-            # =====================
-            # EMPTY
-            # =====================
-
-            elif cmd == "":
-
-                continue
-
-            # =====================
-            # UNKNOWN
-            # =====================
-
-            else:
-
-                print("Unknown command")
-                print("Type 'help'")
 
         except Exception as e:
 
