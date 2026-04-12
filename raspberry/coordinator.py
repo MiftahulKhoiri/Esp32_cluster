@@ -21,9 +21,12 @@ from raspberry.database import (
     increment_retry
 )
 
-# NEW
 from raspberry.result_handler import (
     handle_result
+)
+
+from raspberry.progress_monitor import (
+    update_progress
 )
 
 
@@ -153,11 +156,7 @@ def mark_completed(task_id, status):
 
     retry = task.get("retry", 0)
 
-    print(
-        "Task completed:",
-        task_id,
-        status
-    )
+    print("Task completed:", task_id, status)
 
     if status in ["error", "timeout"]:
 
@@ -235,6 +234,7 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe("cluster/status/+")
     client.subscribe("cluster/task_status/+")
     client.subscribe("cluster/result/+")
+    client.subscribe("cluster/progress/+")
 
 
 # =========================
@@ -256,7 +256,7 @@ def on_message(client, userdata, msg):
         return
 
     # ---------------------
-    # NODE STATUS / HEARTBEAT
+    # NODE STATUS
     # ---------------------
 
     if topic.startswith("cluster/status"):
@@ -325,7 +325,38 @@ def on_message(client, userdata, msg):
             )
 
     # ---------------------
-    # RESULT HANDLER (NEW)
+    # PROGRESS UPDATE
+    # ---------------------
+
+    elif topic.startswith("cluster/progress"):
+
+        node = payload.get("node")
+
+        stage = payload.get(
+            "stage",
+            "unknown"
+        )
+
+        progress = payload.get(
+            "progress",
+            0
+        )
+
+        print(
+            "Progress:",
+            node,
+            stage,
+            str(progress) + "%"
+        )
+
+        update_progress(
+            node,
+            stage,
+            progress
+        )
+
+    # ---------------------
+    # RESULT HANDLER
     # ---------------------
 
     elif topic.startswith("cluster/result"):
