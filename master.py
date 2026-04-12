@@ -20,6 +20,10 @@ from raspberry.cli.banner import (
 services_running = True
 
 
+# =========================
+# SHUTDOWN
+# =========================
+
 def shutdown():
 
     global services_running
@@ -36,6 +40,10 @@ def shutdown():
     sys.exit(0)
 
 
+# =========================
+# SIGNAL HANDLER
+# =========================
+
 def handle_signal(sig, frame):
 
     shutdown()
@@ -47,30 +55,119 @@ signal.signal(
 )
 
 
+# =========================
+# MODE SELECTION
+# =========================
+
+def choose_start_mode():
+
+    print("")
+    print("Select startup mode:")
+    print("")
+    print("1. Update then start")
+    print("2. Start immediately")
+    print("")
+
+    while True:
+
+        try:
+
+            choice = input(
+                "Enter choice (1/2): "
+            ).strip()
+
+            if choice == "1":
+
+                print("")
+                print("Running update...")
+
+                bootstrap()
+
+                print("")
+                print("Update finished")
+                print("")
+
+                return
+
+            elif choice == "2":
+
+                print("")
+                print("Skipping update...")
+                print("")
+
+                return
+
+            else:
+
+                print(
+                    "Invalid choice. "
+                    "Please select 1 or 2."
+                )
+
+        except KeyboardInterrupt:
+
+            shutdown()
+
+        except Exception as e:
+
+            print(
+                "Input error:",
+                str(e)
+            )
+
+
+# =========================
+# MAIN SYSTEM LOOP
+# =========================
+
 def main():
 
     # tampilkan banner
     print_banner()
 
+    # pilih mode start
+    choose_start_mode()
+
     # start semua service
     start_services()
 
-    # loop command
+    print("")
+    print("System ready")
+    print("")
+
+    # command loop
     while services_running:
 
-        result = command_listener(
-            lambda: services_running
-        )
+        try:
 
-        if result == "exit":
+            result = command_listener(
+                lambda: services_running
+            )
+
+            if result == "exit":
+
+                shutdown()
+
+            time.sleep(1)
+
+        except KeyboardInterrupt:
 
             shutdown()
 
-        time.sleep(1)
+        except Exception as e:
 
+            print(
+                "Runtime error:",
+                str(e)
+            )
+
+            time.sleep(2)
+
+
+# =========================
+# ENTRYPOINT
+# =========================
 
 if __name__ == "__main__":
-
-    bootstrap()
 
     main()
