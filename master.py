@@ -3,7 +3,10 @@ import signal
 import sys
 import os
 
-from toolsupdate.bootstrap import bootstrap
+from toolsupdate.bootstrap import (
+    bootstrap,
+    bootstrap1
+)
 
 from raspberry.services.service_manager import (
     start_services
