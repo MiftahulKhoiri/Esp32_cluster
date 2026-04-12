@@ -12,6 +12,10 @@ from raspberry.cli.command_listener import (
     command_listener
 )
 
+from raspberry.cli.banner import (
+    print_banner
+)
+
 
 services_running = True
 
@@ -45,12 +49,13 @@ signal.signal(
 
 def main():
 
-    print("")
-    print("ESP32 CLUSTER MASTER SERVER")
-    print("")
+    # tampilkan banner
+    print_banner()
 
+    # start semua service
     start_services()
 
+    # loop command
     while services_running:
 
         result = command_listener(
