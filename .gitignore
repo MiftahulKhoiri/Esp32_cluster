@@ -1,8 +1,41 @@
+# ===============================
+# Python
+# ===============================
+
 __pycache__/
 *.pyc
+
+# ===============================
+# Environment
+# ===============================
+
 .env
 venv/
+
+# ===============================
+# IDE
+# ===============================
+
 .idea/
 .vscode/
 .DS_Store
+
+# ===============================
+# Logs
+# ===============================
+
 *.log
+
+# ===============================
+# Runtime folders
+# ===============================
+
+raspberry/cli/Data/*
+raspberry/cli/Hasil/*
+raspberry/cli/Program/*
+raspberry/cli/Temp/*
+
+!raspberry/cli/Data/.gitkeep
+!raspberry/cli/Hasil/.gitkeep
+!raspberry/cli/Program/.gitkeep
+!raspberry/cli/Temp/.gitkeep
