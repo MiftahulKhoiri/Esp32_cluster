@@ -408,7 +408,7 @@ def main():
             client.check_msg()
 
             send_heartbeat()
-            
+
             send_system_status()
 
         except Exception as e:
