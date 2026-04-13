@@ -32,11 +32,32 @@ from raspberry.progress_monitor import (
     update_progress
 )
 
+logger = get_logger("coordinator")
+
 # =========================================================
-# LOGGER
+# SIMPLE CONSOLE OUTPUT
 # =========================================================
 
-logger = get_logger("coordinator")
+def print_event(message):
+    print(message)
+
+
+last_progress = {}
+PROGRESS_STEP = 10
+
+
+def print_progress(node, progress):
+
+    last = last_progress.get(node)
+
+    if last is None or progress >= last + PROGRESS_STEP:
+
+        last_progress[node] = progress
+
+        print(
+            f"Progress {node}: {progress}%"
+        )
+
 
 # =========================================================
 # STATE
@@ -56,39 +77,14 @@ node_last_seen = {}
 service_running = True
 
 # =========================================================
-# PROGRESS FILTER
-# =========================================================
-
-progress_milestones = {}
-
-PROGRESS_STEP = 10
-
-
-def should_log_progress(node, progress):
-
-    last = progress_milestones.get(
-        node,
-        -10
-    )
-
-    if progress >= last + PROGRESS_STEP:
-
-        progress_milestones[node] = progress
-
-        return True
-
-    return False
-
-
-# =========================================================
-# DATABASE INIT
+# DATABASE
 # =========================================================
 
 try:
 
     init_db()
 
-    logger.info(
+    print_event(
         "Database initialized"
     )
 
@@ -99,6 +95,7 @@ except Exception:
     )
 
     raise
+
 
 # =========================================================
 # NODE MANAGEMENT
@@ -122,11 +119,9 @@ def get_next_node():
     with state_lock:
 
         if not node_list:
-
             return None
 
         if node_index >= len(node_list):
-
             node_index = 0
 
         node = node_list[node_index]
@@ -137,7 +132,7 @@ def get_next_node():
 
 
 # =========================================================
-# NODE HEALTH MONITOR
+# NODE HEALTH
 # =========================================================
 
 def check_node_health():
@@ -155,28 +150,21 @@ def check_node_health():
             if now - last_seen > \
                NODE_HEARTBEAT_TIMEOUT:
 
-                dead_nodes.append(
-                    node
-                )
+                dead_nodes.append(node)
 
         for node in dead_nodes:
 
             if node in ready_nodes:
 
-                logger.warning(
-                    "Node timeout",
-                    extra={
-                        "node": node
-                    }
-                )
-
-                ready_nodes.discard(
-                    node
-                )
+                ready_nodes.discard(node)
 
                 node_last_seen.pop(
                     node,
                     None
+                )
+
+                print_event(
+                    f"Node timeout: {node}"
                 )
 
     if dead_nodes:
@@ -198,29 +186,13 @@ def add_task(task):
     task["retry"] = 0
     task["created"] = time.time()
 
-    try:
+    insert_task(task)
 
-        insert_task(task)
+    print_event(
+        f"Task stored: {task_id}"
+    )
 
-        logger.info(
-            "Task stored",
-            extra={
-                "task_id": task_id,
-                "type": task.get(
-                    "type"
-                )
-            }
-        )
-
-        return task_id
-
-    except Exception:
-
-        logger.exception(
-            "Failed to insert task"
-        )
-
-        raise
+    return task_id
 
 
 def get_next_task():
@@ -232,7 +204,7 @@ def get_next_task():
     except Exception:
 
         logger.exception(
-            "Failed to fetch pending task"
+            "Failed to fetch task"
         )
 
         return None
@@ -248,92 +220,62 @@ def mark_running(task_id):
                 task_id
             ]["start_time"] = time.time()
 
-    logger.info(
-        "Task running",
-        extra={
-            "task_id": task_id
-        }
+    print_event(
+        f"Task started: {task_id}"
     )
 
 
-def mark_completed(
-    task_id,
-    status
-):
+def mark_completed(task_id, status):
 
     with state_lock:
 
         if task_id not in running_tasks:
-
             return
 
         task_info = running_tasks[
             task_id
         ]
 
-        task = task_info[
-            "task"
-        ]
+        task = task_info["task"]
 
         retry = task.get(
             "retry",
             0
         )
 
-    logger.info(
-        "Task completed",
-        extra={
-            "task_id": task_id,
-            "status": status
-        }
-    )
+    if status in [
+        "error",
+        "timeout"
+    ]:
 
-    try:
+        if retry < RETRY_LIMIT:
 
-        if status in [
-            "error",
-            "timeout"
-        ]:
+            increment_retry(task)
 
-            if retry < RETRY_LIMIT:
-
-                increment_retry(
-                    task
-                )
-
-                logger.warning(
-                    "Retry task",
-                    extra={
-                        "task_id": task_id,
-                        "attempt": retry + 1
-                    }
-                )
-
-            else:
-
-                update_status(
-                    task_id,
-                    "failed"
-                )
-
-                logger.error(
-                    "Task failed permanently",
-                    extra={
-                        "task_id": task_id
-                    }
-                )
+            print_event(
+                f"Retry task: {task_id}"
+            )
 
         else:
 
             update_status(
                 task_id,
-                status
+                "failed"
             )
 
-    except Exception:
+            print_event(
+                f"Task failed: {task_id}"
+            )
 
-        logger.exception(
-            "Failed updating task status"
+    else:
+
+        update_status(
+            task_id,
+            status
+        )
+
+        print_event(
+            f"Task finished: {task_id} {status}"
         )
 
     with state_lock:
@@ -349,98 +291,14 @@ def mark_completed(
 
 
 # =========================================================
-# TIMEOUT MONITOR
+# MQTT
 # =========================================================
 
-def check_timeouts():
-
-    now = time.time()
-
-    expired = []
-
-    with state_lock:
-
-        for task_id, info in list(
-            running_tasks.items()
-        ):
-
-            start = info[
-                "start_time"
-            ]
-
-            if now - start > \
-               TASK_TIMEOUT:
-
-                expired.append(
-                    task_id
-                )
-
-    for task_id in expired:
-
-        logger.error(
-            "Task timeout",
-            extra={
-                "task_id": task_id
-            }
-        )
-
-        mark_completed(
-            task_id,
-            "timeout"
-        )
-
-
-# =========================================================
-# MQTT RECONNECT
-# =========================================================
-
-def ensure_mqtt_connection():
-
-    try:
-
-        if not client.is_connected():
-
-            logger.warning(
-                "MQTT disconnected, reconnecting"
-            )
-
-            client.reconnect()
-
-    except Exception:
-
-        try:
-
-            client.connect(
-                MQTT_BROKER,
-                1883,
-                60
-            )
-
-            logger.info(
-                "MQTT reconnected"
-            )
-
-        except Exception:
-
-            logger.exception(
-                "MQTT reconnect failed"
-            )
-
-
-# =========================================================
-# MQTT CONNECT
-# =========================================================
-
-def on_connect(
-    client,
-    userdata,
-    flags,
-    rc
-):
+def on_connect(client, userdata, flags, rc):
 
     if rc == 0:
 
-        logger.info(
+        print_event(
             "MQTT connected"
         )
 
@@ -460,45 +318,14 @@ def on_connect(
             "cluster/progress/+"
         )
 
-    else:
 
-        logger.error(
-            "MQTT connection failed",
-            extra={
-                "rc": rc
-            }
-        )
-
-
-# =========================================================
-# MESSAGE HANDLER
-# =========================================================
-
-def on_message(
-    client,
-    userdata,
-    msg
-):
+def on_message(client, userdata, msg):
 
     topic = msg.topic
 
-    try:
-
-        payload = json.loads(
-            msg.payload
-        )
-
-    except Exception:
-
-        logger.exception(
-            "Invalid JSON payload"
-        )
-
-        return
-
-    # =====================
-    # NODE STATUS
-    # =====================
+    payload = json.loads(
+        msg.payload
+    )
 
     if topic.startswith(
         "cluster/status"
@@ -511,10 +338,6 @@ def on_message(
         status = payload.get(
             "status"
         )
-
-        if not node:
-
-            return
 
         with state_lock:
 
@@ -533,15 +356,11 @@ def on_message(
                         node
                     )
 
-                    logger.info(
-                        "Node ready",
-                        extra={
-                            "node": node
-                        }
+                    print_event(
+                        f"Node ready: {node}"
                     )
 
-            elif status == \
-                 "offline":
+            elif status == "offline":
 
                 if node in ready_nodes:
 
@@ -549,23 +368,11 @@ def on_message(
                         node
                     )
 
-                    node_last_seen.pop(
-                        node,
-                        None
-                    )
-
-                    logger.warning(
-                        "Node offline",
-                        extra={
-                            "node": node
-                        }
+                    print_event(
+                        f"Node offline: {node}"
                     )
 
         update_node_list()
-
-    # =====================
-    # TASK STATUS
-    # =====================
 
     elif topic.startswith(
         "cluster/task_status"
@@ -578,10 +385,6 @@ def on_message(
         status = payload.get(
             "status"
         )
-
-        if not task_id:
-
-            return
 
         if status == "running":
 
@@ -602,10 +405,6 @@ def on_message(
                 status
             )
 
-    # =====================
-    # PROGRESS
-    # =====================
-
     elif topic.startswith(
         "cluster/progress"
     ):
@@ -614,106 +413,42 @@ def on_message(
             "node"
         )
 
-        if not node:
-
-            return
-
-        stage = payload.get(
-            "stage",
-            "unknown"
-        )
-
         progress = payload.get(
             "progress",
             0
         )
 
-        if should_log_progress(
+        print_progress(
             node,
             progress
-        ):
-
-            logger.info(
-                "Progress",
-                extra={
-                    "node": node,
-                    "stage": stage,
-                    "progress": progress
-                }
-            )
+        )
 
         update_progress(
             node,
             payload
         )
 
-    # =====================
-    # RESULT
-    # =====================
-
     elif topic.startswith(
         "cluster/result"
     ):
 
-        logger.info(
-            "Result received"
+        result = payload.get(
+            "result"
         )
 
-        try:
+        filename = result.get(
+            "filename"
+        )
 
-            node = payload.get(
-                "node"
-            )
+        handle_result(
+            payload.get("node"),
+            filename,
+            result.get("data")
+        )
 
-            result = payload.get(
-                "result"
-            )
-
-            if not node or \
-               not result:
-
-                logger.warning(
-                    "Invalid result payload"
-                )
-
-                return
-
-            filename = result.get(
-                "filename",
-                "result.csv"
-            )
-
-            data = result.get(
-                "data"
-            )
-
-            if not data:
-
-                logger.warning(
-                    "Empty result data"
-                )
-
-                return
-
-            handle_result(
-                node,
-                filename,
-                data
-            )
-
-            logger.info(
-                "Result stored",
-                extra={
-                    "node": node,
-                    "file": filename
-                }
-            )
-
-        except Exception:
-
-            logger.exception(
-                "Result handling failed"
-            )
+        print_event(
+            f"Result stored: {filename}"
+        )
 
 
 # =========================================================
@@ -742,96 +477,18 @@ add_task(
 )
 
 # =========================================================
-# DISPATCH TASK
-# =========================================================
-
-def dispatch_task():
-
-    if not ready_nodes:
-
-        return
-
-    task = get_next_task()
-
-    if not task:
-
-        return
-
-    node = get_next_node()
-
-    if not node:
-
-        return
-
-    topic = "cluster/task/" + node
-
-    try:
-
-        client.publish(
-            topic,
-            json.dumps(task)
-        )
-
-        update_status(
-            task["task_id"],
-            "running"
-        )
-
-        with state_lock:
-
-            running_tasks[
-                task["task_id"]
-            ] = {
-
-                "task": task,
-                "start_time":
-                    time.time(),
-                "node": node
-
-            }
-
-            ready_nodes.discard(
-                node
-            )
-
-            progress_milestones.pop(
-                node,
-                None
-            )
-
-        update_node_list()
-
-        logger.info(
-            "Task dispatched",
-            extra={
-                "task_id":
-                    task["task_id"],
-                "node": node
-            }
-        )
-
-    except Exception:
-
-        logger.exception(
-            "Failed to dispatch task"
-        )
-
-
-# =========================================================
 # MAIN LOOP
 # =========================================================
 
 def coordinator_loop():
 
-    logger.info(
-        "Coordinator loop started"
+    print_event(
+        "Coordinator started"
     )
 
     while service_running:
 
         try:
-
-            ensure_mqtt_connection()
 
             dispatch_task()
 
@@ -846,44 +503,7 @@ def coordinator_loop():
         except Exception:
 
             logger.exception(
-                "Coordinator loop error"
+                "Coordinator error"
             )
 
             time.sleep(2)
-
-
-# =========================================================
-# SERVICE ENTRYPOINT
-# =========================================================
-
-def start_coordinator():
-
-    logger.info(
-        "Starting coordinator service"
-    )
-
-    thread = threading.Thread(
-        target=coordinator_loop,
-        daemon=True
-    )
-
-    thread.start()
-
-    logger.info(
-        "Coordinator running"
-    )
-
-
-# =========================================================
-# STOP SERVICE
-# =========================================================
-
-def stop_coordinator():
-
-    global service_running
-
-    service_running = False
-
-    logger.warning(
-        "Coordinator stopped"
-    )
