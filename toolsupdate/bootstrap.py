@@ -83,12 +83,21 @@ def bootstrap():
         restart_in_venv()
 
 def bootstrap1():
-    # ===============================
-    # 1. Pastikan venv
-    # ===============================
+
     if not VENV_DIR.exists():
+
         create_venv()
+
+        os.environ["ESP32_BOOTSTRAPPED"] = "1"
+
         restart_in_venv()
 
+        return
+
     if not in_virtualenv():
+
+        os.environ["ESP32_BOOTSTRAPPED"] = "1"
+
         restart_in_venv()
+
+        return
