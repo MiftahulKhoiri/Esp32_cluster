@@ -1,5 +1,7 @@
 import network
 import time
+import machine
+import gc
 
 from config import WIFI_SSID, WIFI_PASSWORD
 
@@ -10,8 +12,12 @@ except:
     LED_AVAILABLE = False
 
 
+MAX_RETRIES = 5
+RETRY_DELAY = 5
+
+
 # =========================
-# GET WLAN INSTANCE
+# GET WLAN
 # =========================
 
 def get_wlan():
@@ -19,7 +25,36 @@ def get_wlan():
     wlan = network.WLAN(network.STA_IF)
 
     if not wlan.active():
+
         wlan.active(True)
+
+        time.sleep(1)
+
+    return wlan
+
+
+# =========================
+# HARD RESET WIFI
+# =========================
+
+def reset_wifi():
+
+    wlan = network.WLAN(network.STA_IF)
+
+    try:
+        wlan.disconnect()
+    except:
+        pass
+
+    wlan.active(False)
+
+    time.sleep(1)
+
+    wlan.active(True)
+
+    time.sleep(1)
+
+    gc.collect()
 
     return wlan
 
@@ -30,31 +65,51 @@ def get_wlan():
 
 def connect_wifi(timeout=20, retry=True):
 
-    wlan = get_wlan()
-
-    if wlan.isconnected():
-
-        print("WiFi already connected")
-
-        return True
+    retries = 0
 
     while True:
+
+        wlan = reset_wifi()
 
         print("Connecting WiFi...")
 
         if LED_AVAILABLE:
             led.set_state("wifi_connecting")
 
-        wlan.connect(
-            WIFI_SSID,
-            WIFI_PASSWORD
-        )
+        try:
+
+            wlan.connect(
+                WIFI_SSID,
+                WIFI_PASSWORD
+            )
+
+        except OSError as e:
+
+            print("Connect error:", e)
+
+            retries += 1
+
+            if retries >= MAX_RETRIES:
+                return False
+
+            time.sleep(RETRY_DELAY)
+
+            continue
 
         start = time.time()
 
-        while not wlan.isconnected():
+        while True:
 
-            time.sleep(1)
+            if wlan.isconnected():
+
+                print("WiFi connected")
+
+                print("IP:", wlan.ifconfig()[0])
+
+                if LED_AVAILABLE:
+                    led.set_state("wifi_connected")
+
+                return True
 
             if time.time() - start > timeout:
 
@@ -62,15 +117,15 @@ def connect_wifi(timeout=20, retry=True):
 
                 break
 
-        if wlan.isconnected():
+            time.sleep(1)
 
-            print("WiFi connected")
+        status = wlan.status()
 
-            print("IP:", wlan.ifconfig()[0])
+        print("WiFi status:", status)
 
-            return True
+        retries += 1
 
-        if not retry:
+        if not retry or retries >= MAX_RETRIES:
 
             print("WiFi failed")
 
@@ -79,18 +134,18 @@ def connect_wifi(timeout=20, retry=True):
 
             return False
 
-        print("Retrying WiFi in 5 sec...")
+        print("Retrying WiFi in", RETRY_DELAY, "sec")
 
-        time.sleep(5)
+        time.sleep(RETRY_DELAY)
 
 
 # =========================
-# CHECK WIFI CONNECTION
+# CHECK WIFI
 # =========================
 
 def is_connected():
 
-    wlan = get_wlan()
+    wlan = network.WLAN(network.STA_IF)
 
     return wlan.isconnected()
 
@@ -101,7 +156,9 @@ def is_connected():
 
 def ensure_connection():
 
-    if not is_connected():
+    wlan = network.WLAN(network.STA_IF)
+
+    if not wlan.isconnected():
 
         print("WiFi lost")
 
@@ -114,7 +171,7 @@ def ensure_connection():
 
 def disconnect():
 
-    wlan = get_wlan()
+    wlan = network.WLAN(network.STA_IF)
 
     if wlan.isconnected():
 
