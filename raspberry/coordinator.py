@@ -56,14 +56,48 @@ node_last_seen = {}
 service_running = True
 
 # =========================================================
+# PROGRESS FILTER
+# =========================================================
+
+progress_milestones = {}
+
+PROGRESS_STEP = 10
+
+
+def should_log_progress(node, progress):
+
+    last = progress_milestones.get(
+        node,
+        -10
+    )
+
+    if progress >= last + PROGRESS_STEP:
+
+        progress_milestones[node] = progress
+
+        return True
+
+    return False
+
+
+# =========================================================
 # DATABASE INIT
 # =========================================================
 
 try:
+
     init_db()
-    logger.info("Database initialized")
+
+    logger.info(
+        "Database initialized"
+    )
+
 except Exception:
-    logger.exception("Database initialization failed")
+
+    logger.exception(
+        "Database initialization failed"
+    )
+
     raise
 
 # =========================================================
@@ -75,12 +109,10 @@ def update_node_list():
     global node_list
 
     with state_lock:
-        node_list = list(ready_nodes)
 
-    logger.debug(
-        "Node list updated",
-        extra={"count": len(node_list)}
-    )
+        node_list = list(
+            ready_nodes
+        )
 
 
 def get_next_node():
@@ -90,9 +122,11 @@ def get_next_node():
     with state_lock:
 
         if not node_list:
+
             return None
 
         if node_index >= len(node_list):
+
             node_index = 0
 
         node = node_list[node_index]
@@ -109,6 +143,7 @@ def get_next_node():
 def check_node_health():
 
     now = time.time()
+
     dead_nodes = []
 
     with state_lock:
@@ -117,25 +152,35 @@ def check_node_health():
             node_last_seen.items()
         ):
 
-            if now - last_seen > NODE_HEARTBEAT_TIMEOUT:
+            if now - last_seen > \
+               NODE_HEARTBEAT_TIMEOUT:
 
-                dead_nodes.append(node)
+                dead_nodes.append(
+                    node
+                )
 
         for node in dead_nodes:
 
-            logger.warning(
-                "Node timeout",
-                extra={"node": node}
-            )
+            if node in ready_nodes:
 
-            ready_nodes.discard(node)
+                logger.warning(
+                    "Node timeout",
+                    extra={
+                        "node": node
+                    }
+                )
 
-            node_last_seen.pop(
-                node,
-                None
-            )
+                ready_nodes.discard(
+                    node
+                )
+
+                node_last_seen.pop(
+                    node,
+                    None
+                )
 
     if dead_nodes:
+
         update_node_list()
 
 
@@ -145,7 +190,9 @@ def check_node_health():
 
 def add_task(task):
 
-    task_id = str(uuid.uuid4())
+    task_id = str(
+        uuid.uuid4()
+    )
 
     task["task_id"] = task_id
     task["retry"] = 0
@@ -159,7 +206,9 @@ def add_task(task):
             "Task stored",
             extra={
                 "task_id": task_id,
-                "type": task.get("type")
+                "type": task.get(
+                    "type"
+                )
             }
         )
 
@@ -201,22 +250,30 @@ def mark_running(task_id):
 
     logger.info(
         "Task running",
-        extra={"task_id": task_id}
+        extra={
+            "task_id": task_id
+        }
     )
 
 
-def mark_completed(task_id, status):
+def mark_completed(
+    task_id,
+    status
+):
 
     with state_lock:
 
         if task_id not in running_tasks:
+
             return
 
         task_info = running_tasks[
             task_id
         ]
 
-        task = task_info["task"]
+        task = task_info[
+            "task"
+        ]
 
         retry = task.get(
             "retry",
@@ -240,7 +297,9 @@ def mark_completed(task_id, status):
 
             if retry < RETRY_LIMIT:
 
-                increment_retry(task)
+                increment_retry(
+                    task
+                )
 
                 logger.warning(
                     "Retry task",
@@ -296,6 +355,7 @@ def mark_completed(task_id, status):
 def check_timeouts():
 
     now = time.time()
+
     expired = []
 
     with state_lock:
@@ -308,7 +368,8 @@ def check_timeouts():
                 "start_time"
             ]
 
-            if now - start > TASK_TIMEOUT:
+            if now - start > \
+               TASK_TIMEOUT:
 
                 expired.append(
                     task_id
@@ -318,7 +379,9 @@ def check_timeouts():
 
         logger.error(
             "Task timeout",
-            extra={"task_id": task_id}
+            extra={
+                "task_id": task_id
+            }
         )
 
         mark_completed(
@@ -401,7 +464,9 @@ def on_connect(
 
         logger.error(
             "MQTT connection failed",
-            extra={"rc": rc}
+            extra={
+                "rc": rc
+            }
         )
 
 
@@ -448,6 +513,7 @@ def on_message(
         )
 
         if not node:
+
             return
 
         with state_lock:
@@ -461,30 +527,39 @@ def on_message(
                 "online"
             ]:
 
-                ready_nodes.add(
-                    node
-                )
+                if node not in ready_nodes:
 
-                logger.info(
-                    "Node ready",
-                    extra={"node": node}
-                )
+                    ready_nodes.add(
+                        node
+                    )
 
-            elif status == "offline":
+                    logger.info(
+                        "Node ready",
+                        extra={
+                            "node": node
+                        }
+                    )
 
-                ready_nodes.discard(
-                    node
-                )
+            elif status == \
+                 "offline":
 
-                node_last_seen.pop(
-                    node,
-                    None
-                )
+                if node in ready_nodes:
 
-                logger.warning(
-                    "Node offline",
-                    extra={"node": node}
-                )
+                    ready_nodes.discard(
+                        node
+                    )
+
+                    node_last_seen.pop(
+                        node,
+                        None
+                    )
+
+                    logger.warning(
+                        "Node offline",
+                        extra={
+                            "node": node
+                        }
+                    )
 
         update_node_list()
 
@@ -505,15 +580,8 @@ def on_message(
         )
 
         if not task_id:
-            return
 
-        logger.info(
-            "Task status update",
-            extra={
-                "task_id": task_id,
-                "status": status
-            }
-        )
+            return
 
         if status == "running":
 
@@ -522,9 +590,11 @@ def on_message(
             )
 
         if status in [
+
             "done",
             "error",
             "timeout"
+
         ]:
 
             mark_completed(
@@ -545,6 +615,7 @@ def on_message(
         )
 
         if not node:
+
             return
 
         stage = payload.get(
@@ -557,37 +628,24 @@ def on_message(
             0
         )
 
-        logger.info(
-            "Progress update",
-            extra={
-                "node": node,
-                "stage": stage,
-                "progress": progress
-            }
-        )
+        if should_log_progress(
+            node,
+            progress
+        ):
+
+            logger.info(
+                "Progress",
+                extra={
+                    "node": node,
+                    "stage": stage,
+                    "progress": progress
+                }
+            )
 
         update_progress(
             node,
             payload
         )
-
-        if stage == "system":
-
-            logger.debug(
-                "System metrics",
-                extra={
-                    "node": node,
-                    "ram_kb": payload.get(
-                        "memory_free_kb"
-                    ),
-                    "cpu": payload.get(
-                        "cpu_percent"
-                    ),
-                    "temp": payload.get(
-                        "temperature"
-                    )
-                }
-            )
 
     # =====================
     # RESULT
@@ -611,7 +669,8 @@ def on_message(
                 "result"
             )
 
-            if not node or not result:
+            if not node or \
+               not result:
 
                 logger.warning(
                     "Invalid result payload"
@@ -689,16 +748,19 @@ add_task(
 def dispatch_task():
 
     if not ready_nodes:
+
         return
 
     task = get_next_task()
 
     if not task:
+
         return
 
     node = get_next_node()
 
     if not node:
+
         return
 
     topic = "cluster/task/" + node
@@ -722,7 +784,8 @@ def dispatch_task():
             ] = {
 
                 "task": task,
-                "start_time": time.time(),
+                "start_time":
+                    time.time(),
                 "node": node
 
             }
@@ -731,12 +794,18 @@ def dispatch_task():
                 node
             )
 
+            progress_milestones.pop(
+                node,
+                None
+            )
+
         update_node_list()
 
         logger.info(
             "Task dispatched",
             extra={
-                "task_id": task["task_id"],
+                "task_id":
+                    task["task_id"],
                 "node": node
             }
         )
