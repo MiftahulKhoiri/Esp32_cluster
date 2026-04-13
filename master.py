@@ -66,10 +66,10 @@ signal.signal(
 def choose_start_mode():
 
     print("")
-    print("Select startup mode:")
+    print("Pilih Mode untuk mulai:")
     print("")
-    print("1. Update then start")
-    print("2. Start immediately")
+    print("1. Update program --> start:")
+    print("2. Langsung Start program:")
     print("")
 
     while True:
@@ -101,6 +101,9 @@ def choose_start_mode():
 
                 bootstrap1()
 
+                print("")
+                print("Starting program:")
+                print("")
                 return
 
             else:
@@ -128,9 +131,9 @@ def choose_start_mode():
 
 def main():
 
-    print_banner()
-
     choose_start_mode()
+
+    print_banner()
 
     start_services()
 
