@@ -131,7 +131,9 @@ def choose_start_mode():
 
 def main():
 
-    choose_start_mode()
+    if os.environ.get("ESP32_BOOTSTRAPPED") != "1":
+
+        choose_start_mode()
 
     print_banner()
 
@@ -167,7 +169,6 @@ def main():
             )
 
             time.sleep(2)
-
 
 # =========================
 # ENTRYPOINT
