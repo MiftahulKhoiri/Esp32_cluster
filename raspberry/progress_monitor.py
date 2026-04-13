@@ -1,6 +1,9 @@
 import time
 import threading
 
+from toolsupdate.logger import get_logger
+
+log = get_logger("PROGRESS")
 
 # =========================
 # STATE
@@ -8,7 +11,11 @@ import threading
 
 node_progress = {}
 
+last_printed = {}
+
 lock = threading.Lock()
+
+PROGRESS_STEP = 10
 
 
 # =========================
@@ -73,92 +80,83 @@ def update_progress(
 
 
 # =========================
-# PRINT
+# CHANGE DETECTION
+# =========================
+
+def should_print(
+    node,
+    info
+):
+
+    last = last_printed.get(node)
+
+    if last is None:
+
+        last_printed[node] = info
+
+        return True
+
+    # progress milestone
+    if info["progress"] >= \
+       last["progress"] + PROGRESS_STEP:
+
+        last_printed[node] = info
+
+        return True
+
+    # stage change
+    if info["stage"] != last["stage"]:
+
+        last_printed[node] = info
+
+        return True
+
+    # cpu change
+    if info["cpu_percent"] != \
+       last["cpu_percent"]:
+
+        last_printed[node] = info
+
+        return True
+
+    # temperature change
+    if info["temperature"] != \
+       last["temperature"]:
+
+        last_printed[node] = info
+
+        return True
+
+    return False
+
+
+# =========================
+# PRINT EVENT
 # =========================
 
 def print_progress():
 
     with lock:
 
-        print("")
-        print(
-            "===================================="
-        )
-        print(
-            " NODE SYSTEM MONITOR"
-        )
-        print(
-            "===================================="
-        )
-        print("")
-
         if not node_progress:
-
-            print(
-                "Belum ada data"
-            )
 
             return
 
         for node, info in node_progress.items():
 
-            print(node)
+            if not should_print(
+                node,
+                info
+            ):
+                continue
 
-            print(
-                "  stage      :",
-                info["stage"]
+            log.info(
+                "Node update",
+                extra={
+                    "node": node,
+                    "stage": info["stage"],
+                    "progress": info["progress"],
+                    "cpu": info["cpu_percent"],
+                    "temp": info["temperature"]
+                }
             )
-
-            print(
-                "  progress   :",
-                str(info["progress"]) + "%"
-            )
-
-            if info["memory_free_kb"] is not None:
-
-                print(
-                    "  RAM free   :",
-                    info["memory_free_kb"],
-                    "KB"
-                )
-
-                print(
-                    "  RAM used   :",
-                    info["memory_used_kb"],
-                    "KB"
-                )
-
-            if info["cpu_percent"] is not None:
-
-                print(
-                    "  CPU        :",
-                    str(info["cpu_percent"]) + "%"
-                )
-
-            if info["flash_percent"] is not None:
-
-                print(
-                    "  Flash free :",
-                    info["flash_free_kb"],
-                    "KB"
-                )
-
-                print(
-                    "  Flash used :",
-                    str(info["flash_percent"]) + "%"
-                )
-
-            if info["temperature"] is not None:
-
-                print(
-                    "  Temp       :",
-                    str(info["temperature"]),
-                    "C"
-                )
-
-            print(
-                "  update     :",
-                info["time"]
-            )
-
-            print("")
