@@ -3,6 +3,8 @@ import signal
 import sys
 import os
 
+from toolsupdate.logger import get_logger
+
 from toolsupdate.bootstrap import (
     bootstrap,
     bootstrap_fast
@@ -20,6 +22,7 @@ from raspberry.cli.banner import (
     print_banner
 )
 
+log = get_logger("ESP32_SERVER")
 
 services_running = True
 
@@ -32,14 +35,13 @@ def shutdown():
 
     global services_running
 
-    print("")
-    print("Stopping system...")
+    log.info("Stopping system")
 
     services_running = False
 
     time.sleep(1)
 
-    print("System stopped")
+    log.info("System stopped")
 
     sys.exit(0)
 
@@ -68,8 +70,8 @@ def choose_start_mode():
     print("")
     print("Pilih Mode untuk mulai:")
     print("")
-    print("1. Update program --> start:")
-    print("2. Langsung Start program:")
+    print("1. Update program --> start")
+    print("2. Langsung Start program")
     print("")
 
     while True:
@@ -82,28 +84,18 @@ def choose_start_mode():
 
             if choice == "1":
 
-                print("")
-                print("Running update...")
+                log.info("Running full bootstrap")
 
                 bootstrap()
-
-                print("")
-                print("Update finished")
-                print("")
 
                 return
 
             elif choice == "2":
 
-                print("")
-                print("Starting with virtual environment...")
-                print("")
+                log.info("Running fast bootstrap")
 
                 bootstrap_fast()
 
-                print("")
-                print("Starting program:")
-                print("")
                 return
 
             else:
@@ -117,11 +109,10 @@ def choose_start_mode():
 
             shutdown()
 
-        except Exception as e:
+        except Exception:
 
-            print(
-                "Input error:",
-                str(e)
+            log.exception(
+                "Input error"
             )
 
 
@@ -131,7 +122,9 @@ def choose_start_mode():
 
 def main():
 
-    if os.environ.get("ESP32_BOOTSTRAPPED") != "1":
+    if os.environ.get(
+        "ESP32_BOOTSTRAPPED"
+    ) != "1":
 
         choose_start_mode()
 
@@ -139,9 +132,9 @@ def main():
 
     start_services()
 
-    print("")
-    print("Server cluster ESP32 sudah siap: ")
-    print("")
+    log.info(
+        "Server cluster ESP32 sudah siap"
+    )
 
     while services_running:
 
@@ -161,14 +154,14 @@ def main():
 
             shutdown()
 
-        except Exception as e:
+        except Exception:
 
-            print(
-                "Runtime error:",
-                str(e)
+            log.exception(
+                "Runtime error"
             )
 
             time.sleep(2)
+
 
 # =========================
 # ENTRYPOINT
