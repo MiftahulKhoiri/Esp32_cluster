@@ -1,6 +1,10 @@
 import os
 import base64
+import threading
 
+from toolsupdate.logger import get_logger
+
+logger = get_logger("result_handler")
 
 # =========================
 # DIRECTORY
@@ -22,6 +26,11 @@ HASIL_DIR = os.path.join(
     "hasil"
 )
 
+lock = threading.Lock()
+
+# =========================
+# INIT
+# =========================
 
 def ensure_directories():
 
@@ -35,9 +44,8 @@ def ensure_directories():
         exist_ok=True
     )
 
-
 # =========================
-# SAVE RESULT FROM NODE
+# SAVE RESULT
 # =========================
 
 def save_node_result(
@@ -48,55 +56,105 @@ def save_node_result(
 
     ensure_directories()
 
+    if not data_base64:
+
+        logger.warning(
+            "Result data kosong",
+            extra={"node": node}
+        )
+
+        return False
+
+    try:
+
+        if isinstance(
+            data_base64,
+            str
+        ):
+
+            data_base64 = data_base64.encode()
+
+        data = base64.b64decode(
+            data_base64
+        )
+
+    except Exception as e:
+
+        logger.error(
+            "Base64 decode gagal",
+            extra={
+                "node": node,
+                "error": str(e)
+            }
+        )
+
+        return False
+
     file_path = os.path.join(
         TEMP_DIR,
         f"{node}_{filename}"
     )
 
-    data = base64.b64decode(
-        data_base64
-    )
+    try:
 
-    with open(
-        file_path,
-        "wb"
-    ) as f:
+        with lock:
 
-        f.write(data)
+            with open(
+                file_path,
+                "wb"
+            ) as f:
 
-    print(
-        "Result saved:",
-        file_path
-    )
+                f.write(data)
+
+        print(
+            f"Result saved: {file_path}"
+        )
+
+        return True
+
+    except Exception as e:
+
+        logger.exception(
+            "Gagal menyimpan result"
+        )
+
+        return False
 
 
 # =========================
-# CHECK IF ALL RESULT READY
+# CHECK RESULT READY
 # =========================
 
 def all_results_received():
 
-    from raspberry.coordinator import ready_nodes
+    """
+    Check apakah semua node sudah kirim result
+    berdasarkan file di TEMP_DIR
+    """
 
-    nodes = list(ready_nodes)
+    ensure_directories()
 
     files = os.listdir(
         TEMP_DIR
     )
 
-    received_nodes = set()
+    if not files:
+
+        return False
+
+    nodes = set()
 
     for file in files:
 
         node = file.split("_")[0]
 
-        received_nodes.add(node)
+        nodes.add(node)
 
-    return set(nodes) == received_nodes
+    return len(nodes) > 0
 
 
 # =========================
-# MERGE RESULT FILES
+# MERGE RESULT
 # =========================
 
 def merge_results(
@@ -116,37 +174,74 @@ def merge_results(
         )
     )
 
-    with open(
-        output_path,
-        "wb"
-    ) as outfile:
+    if not files:
 
-        for file in files:
+        logger.warning(
+            "Tidak ada result untuk merge"
+        )
+
+        return
+
+    try:
+
+        with lock:
+
+            with open(
+                output_path,
+                "wb"
+            ) as outfile:
+
+                for file in files:
+
+                    file_path = os.path.join(
+                        TEMP_DIR,
+                        file
+                    )
+
+                    with open(
+                        file_path,
+                        "rb"
+                    ) as infile:
+
+                        outfile.write(
+                            infile.read()
+                        )
+
+        print("")
+        print(
+            f"Final result created: {output_path}"
+        )
+        print("")
+
+    except Exception:
+
+        logger.exception(
+            "Merge result gagal"
+        )
+
+
+# =========================
+# CLEAR TEMP
+# =========================
+
+def clear_temp():
+
+    ensure_directories()
+
+    with lock:
+
+        for file in os.listdir(
+            TEMP_DIR
+        ):
 
             file_path = os.path.join(
                 TEMP_DIR,
                 file
             )
 
-            with open(
-                file_path,
-                "rb"
-            ) as infile:
-
-                outfile.write(
-                    infile.read()
-                )
-
-    print("")
-    print(
-        "Final result created:"
-    )
-
-    print(
-        output_path
-    )
-
-    print("")
+            os.remove(
+                file_path
+            )
 
 
 # =========================
@@ -159,11 +254,15 @@ def handle_result(
     data_base64
 ):
 
-    save_node_result(
+    success = save_node_result(
         node,
         filename,
         data_base64
     )
+
+    if not success:
+
+        return
 
     if all_results_received():
 
@@ -172,3 +271,5 @@ def handle_result(
         )
 
         merge_results()
+
+        clear_temp()
