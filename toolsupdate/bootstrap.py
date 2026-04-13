@@ -12,37 +12,68 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 VENV_DIR = BASE_DIR / "venv"
 REQ_FILE = BASE_DIR / "requirements.txt"
 
+REQ_MARKER = VENV_DIR / ".deps_installed"
 
-
-
-# ===============================
+# ========================================
 # VIRTUAL ENV
-# ===============================
+# ========================================
 
 def in_virtualenv() -> bool:
     return sys.prefix != sys.base_prefix
 
 
 def create_venv():
-    log.warning("Virtualenv belum ada, membuat venv...")
-    subprocess.check_call([sys.executable, "-m", "venv", str(VENV_DIR)])
-    log.info("Virtualenv berhasil dibuat")
+
+    log.warning(
+        "Virtualenv belum ada, membuat venv..."
+    )
+
+    subprocess.check_call([
+        sys.executable,
+        "-m",
+        "venv",
+        str(VENV_DIR)
+    ])
+
+    log.info(
+        "Virtualenv berhasil dibuat"
+    )
 
 
 def restart_in_venv():
+
     python_bin = VENV_DIR / "bin" / "python"
-    log.warning("Restarting aplikasi di dalam virtualenv...")
-    os.execv(str(python_bin), [str(python_bin)] + sys.argv)
+
+    log.warning(
+        "Restarting aplikasi di dalam virtualenv..."
+    )
+
+    os.execv(
+        str(python_bin),
+        [str(python_bin)] + sys.argv
+    )
 
 
-# ===============================
+# ========================================
 # REQUIREMENTS
-# ===============================
+# ========================================
 
 def install_requirements():
-    log.info("Memastikan dependency terinstall...")
+
+    if REQ_MARKER.exists():
+
+        log.debug(
+            "Dependency sudah terinstall"
+        )
+
+        return
+
+    log.info(
+        "Installing dependency..."
+    )
 
     pip_bin = VENV_DIR / "bin" / "pip"
+
     subprocess.check_call([
         str(pip_bin),
         "install",
@@ -51,23 +82,28 @@ def install_requirements():
         str(REQ_FILE)
     ])
 
-    log.info("Dependency siap")
+    REQ_MARKER.touch()
+
+    log.info(
+        "Dependency siap"
+    )
 
 
-# ===============================
-# BOOTSTRAP UTAMA
-# ===============================
+# ========================================
+# BOOTSTRAP FULL
+# ========================================
 
 def bootstrap():
 
-    # ===============================
-    # 1. Pastikan venv
-    # ===============================
+    log.info(
+        "Bootstrap FULL start"
+    )
+
+    # 1. ensure venv
+
     if not VENV_DIR.exists():
 
         create_venv()
-
-        os.environ["ESP32_BOOTSTRAPPED"] = "1"
 
         restart_in_venv()
 
@@ -75,20 +111,20 @@ def bootstrap():
 
     if not in_virtualenv():
 
-        os.environ["ESP32_BOOTSTRAPPED"] = "1"
-
         restart_in_venv()
 
         return
 
-    # ===============================
-    # 2. Dependency
-    # ===============================
+    log.info(
+        "Running inside virtualenv"
+    )
+
+    # 2. dependency
+
     install_requirements()
 
-    # ===============================
-    # 3. Auto update
-    # ===============================
+    # 3. auto update
+
     updater = SelfUpdater(
         repo_dir=str(BASE_DIR)
     )
@@ -96,23 +132,31 @@ def bootstrap():
     if updater.update_if_needed():
 
         log.warning(
-            "Restart setelah update..."
+            "Restart setelah update"
         )
-
-        os.environ["ESP32_BOOTSTRAPPED"] = "1"
 
         restart_in_venv()
 
         return
 
+    log.info(
+        "Bootstrap FULL selesai"
+    )
 
-def bootstrap1():
+
+# ========================================
+# BOOTSTRAP FAST
+# ========================================
+
+def bootstrap_fast():
+
+    log.info(
+        "Bootstrap FAST start"
+    )
 
     if not VENV_DIR.exists():
 
         create_venv()
-
-        os.environ["ESP32_BOOTSTRAPPED"] = "1"
 
         restart_in_venv()
 
@@ -120,8 +164,10 @@ def bootstrap1():
 
     if not in_virtualenv():
 
-        os.environ["ESP32_BOOTSTRAPPED"] = "1"
-
         restart_in_venv()
 
         return
+
+    log.info(
+        "Bootstrap FAST selesai"
+    )
