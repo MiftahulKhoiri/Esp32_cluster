@@ -5,7 +5,7 @@ import os
 
 from toolsupdate.bootstrap import (
     bootstrap,
-    bootstrap1
+    bootstrap_fast
 )
 
 from raspberry.services.service_manager import (
@@ -99,7 +99,7 @@ def choose_start_mode():
                 print("Starting with virtual environment...")
                 print("")
 
-                bootstrap1()
+                bootstrap_fast()
 
                 print("")
                 print("Starting program:")
