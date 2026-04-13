@@ -5,6 +5,8 @@ import threading
 
 import paho.mqtt.client as mqtt
 
+from toolsupdate.logger import get_logger
+
 from raspberry.config import (
     MQTT_BROKER,
     TASK_DISPATCH_INTERVAL,
@@ -30,237 +32,293 @@ from raspberry.progress_monitor import (
     update_progress
 )
 
+# =========================================================
+# LOGGER
+# =========================================================
 
-# =========================
+logger = get_logger("coordinator")
+
+# =========================================================
 # STATE
-# =========================
+# =========================================================
+
+state_lock = threading.Lock()
 
 ready_nodes = set()
-
 node_list = []
-
 node_index = 0
 
 running_tasks = {}
-
 completed_tasks = {}
 
 node_last_seen = {}
 
 service_running = True
 
-
-# =========================
+# =========================================================
 # DATABASE INIT
-# =========================
+# =========================================================
 
-init_db()
+try:
+    init_db()
+    logger.info("Database initialized")
+except Exception:
+    logger.exception("Database initialization failed")
+    raise
 
-
-# =========================
+# =========================================================
 # NODE MANAGEMENT
-# =========================
+# =========================================================
 
 def update_node_list():
 
     global node_list
 
-    node_list = list(ready_nodes)
+    with state_lock:
+        node_list = list(ready_nodes)
+
+    logger.debug(
+        "Node list updated",
+        extra={"count": len(node_list)}
+    )
 
 
 def get_next_node():
 
     global node_index
 
-    if not node_list:
-        return None
+    with state_lock:
 
-    if node_index >= len(node_list):
+        if not node_list:
+            return None
 
-        node_index = 0
+        if node_index >= len(node_list):
+            node_index = 0
 
-    node = node_list[node_index]
+        node = node_list[node_index]
 
-    node_index += 1
+        node_index += 1
 
-    return node
+        return node
 
 
-# =========================
+# =========================================================
 # NODE HEALTH MONITOR
-# =========================
+# =========================================================
 
 def check_node_health():
 
     now = time.time()
-
     dead_nodes = []
 
-    for node, last_seen in list(
-        node_last_seen.items()
-    ):
+    with state_lock:
 
-        if now - last_seen > \
-           NODE_HEARTBEAT_TIMEOUT:
+        for node, last_seen in list(
+            node_last_seen.items()
+        ):
 
-            dead_nodes.append(node)
+            if now - last_seen > NODE_HEARTBEAT_TIMEOUT:
 
-    for node in dead_nodes:
+                dead_nodes.append(node)
 
-        print(
-            "Node timeout:",
-            node
-        )
+        for node in dead_nodes:
 
-        ready_nodes.discard(node)
+            logger.warning(
+                "Node timeout",
+                extra={"node": node}
+            )
 
-        node_last_seen.pop(
-            node,
-            None
-        )
+            ready_nodes.discard(node)
 
+            node_last_seen.pop(
+                node,
+                None
+            )
+
+    if dead_nodes:
         update_node_list()
 
 
-# =========================
+# =========================================================
 # TASK MANAGEMENT
-# =========================
+# =========================================================
 
 def add_task(task):
 
     task_id = str(uuid.uuid4())
 
     task["task_id"] = task_id
-
     task["retry"] = 0
-
     task["created"] = time.time()
 
-    insert_task(task)
+    try:
 
-    print(
-        "Task stored:",
-        task_id
-    )
+        insert_task(task)
 
-    return task_id
+        logger.info(
+            "Task stored",
+            extra={
+                "task_id": task_id,
+                "type": task.get("type")
+            }
+        )
+
+        return task_id
+
+    except Exception:
+
+        logger.exception(
+            "Failed to insert task"
+        )
+
+        raise
 
 
 def get_next_task():
 
-    return get_pending_task()
+    try:
+
+        return get_pending_task()
+
+    except Exception:
+
+        logger.exception(
+            "Failed to fetch pending task"
+        )
+
+        return None
 
 
 def mark_running(task_id):
 
-    if task_id in running_tasks:
+    with state_lock:
 
-        running_tasks[task_id][
-            "start_time"
-        ] = time.time()
+        if task_id in running_tasks:
 
-        print(
-            "Task running:",
-            task_id
-        )
+            running_tasks[
+                task_id
+            ]["start_time"] = time.time()
+
+    logger.info(
+        "Task running",
+        extra={"task_id": task_id}
+    )
 
 
 def mark_completed(task_id, status):
 
-    if task_id not in running_tasks:
-        return
+    with state_lock:
 
-    task_info = running_tasks[
-        task_id
-    ]
+        if task_id not in running_tasks:
+            return
 
-    task = task_info["task"]
+        task_info = running_tasks[
+            task_id
+        ]
 
-    retry = task.get(
-        "retry",
-        0
+        task = task_info["task"]
+
+        retry = task.get(
+            "retry",
+            0
+        )
+
+    logger.info(
+        "Task completed",
+        extra={
+            "task_id": task_id,
+            "status": status
+        }
     )
 
-    print(
-        "Task completed:",
-        task_id,
-        status
-    )
+    try:
 
-    if status in [
-        "error",
-        "timeout"
-    ]:
+        if status in [
+            "error",
+            "timeout"
+        ]:
 
-        if retry < RETRY_LIMIT:
+            if retry < RETRY_LIMIT:
 
-            increment_retry(task)
+                increment_retry(task)
 
-            print(
-                "Retry task:",
-                task_id,
-                "attempt",
-                retry + 1
-            )
+                logger.warning(
+                    "Retry task",
+                    extra={
+                        "task_id": task_id,
+                        "attempt": retry + 1
+                    }
+                )
+
+            else:
+
+                update_status(
+                    task_id,
+                    "failed"
+                )
+
+                logger.error(
+                    "Task failed permanently",
+                    extra={
+                        "task_id": task_id
+                    }
+                )
 
         else:
 
             update_status(
                 task_id,
-                "failed"
+                status
             )
 
-            print(
-                "Task failed permanently:",
-                task_id
-            )
+    except Exception:
 
-    else:
-
-        update_status(
-            task_id,
-            status
+        logger.exception(
+            "Failed updating task status"
         )
 
-    completed_tasks[
-        task_id
-    ] = status
+    with state_lock:
 
-    del running_tasks[
-        task_id
-    ]
+        completed_tasks[
+            task_id
+        ] = status
+
+        running_tasks.pop(
+            task_id,
+            None
+        )
 
 
-# =========================
+# =========================================================
 # TIMEOUT MONITOR
-# =========================
+# =========================================================
 
 def check_timeouts():
 
     now = time.time()
-
     expired = []
 
-    for task_id, info in list(
-        running_tasks.items()
-    ):
+    with state_lock:
 
-        start = info[
-            "start_time"
-        ]
+        for task_id, info in list(
+            running_tasks.items()
+        ):
 
-        if now - start > \
-           TASK_TIMEOUT:
+            start = info[
+                "start_time"
+            ]
 
-            expired.append(
-                task_id
-            )
+            if now - start > TASK_TIMEOUT:
+
+                expired.append(
+                    task_id
+                )
 
     for task_id in expired:
 
-        print(
-            "Task timeout:",
-            task_id
+        logger.error(
+            "Task timeout",
+            extra={"task_id": task_id}
         )
 
         mark_completed(
@@ -269,9 +327,9 @@ def check_timeouts():
         )
 
 
-# =========================
+# =========================================================
 # MQTT RECONNECT
-# =========================
+# =========================================================
 
 def ensure_mqtt_connection():
 
@@ -279,8 +337,8 @@ def ensure_mqtt_connection():
 
         if not client.is_connected():
 
-            print(
-                "Reconnecting MQTT..."
+            logger.warning(
+                "MQTT disconnected, reconnecting"
             )
 
             client.reconnect()
@@ -295,17 +353,20 @@ def ensure_mqtt_connection():
                 60
             )
 
-        except Exception as e:
+            logger.info(
+                "MQTT reconnected"
+            )
 
-            print(
-                "Reconnect failed:",
-                e
+        except Exception:
+
+            logger.exception(
+                "MQTT reconnect failed"
             )
 
 
-# =========================
+# =========================================================
 # MQTT CONNECT
-# =========================
+# =========================================================
 
 def on_connect(
     client,
@@ -316,8 +377,8 @@ def on_connect(
 
     if rc == 0:
 
-        print(
-            "Server connected"
+        logger.info(
+            "MQTT connected"
         )
 
         client.subscribe(
@@ -338,15 +399,15 @@ def on_connect(
 
     else:
 
-        print(
-            "MQTT connection failed:",
-            rc
+        logger.error(
+            "MQTT connection failed",
+            extra={"rc": rc}
         )
 
 
-# =========================
+# =========================================================
 # MESSAGE HANDLER
-# =========================
+# =========================================================
 
 def on_message(
     client,
@@ -362,15 +423,13 @@ def on_message(
             msg.payload
         )
 
-    except Exception as e:
+    except Exception:
 
-        print(
-            "JSON error:",
-            e
+        logger.exception(
+            "Invalid JSON payload"
         )
 
         return
-
 
     # =====================
     # NODE STATUS
@@ -391,45 +450,43 @@ def on_message(
         if not node:
             return
 
-        node_last_seen[
-            node
-        ] = time.time()
+        with state_lock:
 
-        if status in [
-            "ready",
-            "online"
-        ]:
-
-            ready_nodes.add(
+            node_last_seen[
                 node
-            )
+            ] = time.time()
 
-            update_node_list()
+            if status in [
+                "ready",
+                "online"
+            ]:
 
-            print(
-                "Node READY:",
-                node
-            )
+                ready_nodes.add(
+                    node
+                )
 
-        elif status == \
-             "offline":
+                logger.info(
+                    "Node ready",
+                    extra={"node": node}
+                )
 
-            ready_nodes.discard(
-                node
-            )
+            elif status == "offline":
 
-            node_last_seen.pop(
-                node,
-                None
-            )
+                ready_nodes.discard(
+                    node
+                )
 
-            update_node_list()
+                node_last_seen.pop(
+                    node,
+                    None
+                )
 
-            print(
-                "Node OFFLINE:",
-                node
-            )
+                logger.warning(
+                    "Node offline",
+                    extra={"node": node}
+                )
 
+        update_node_list()
 
     # =====================
     # TASK STATUS
@@ -450,32 +507,30 @@ def on_message(
         if not task_id:
             return
 
-        print(
-            "Task status:",
-            task_id,
-            status
+        logger.info(
+            "Task status update",
+            extra={
+                "task_id": task_id,
+                "status": status
+            }
         )
 
-        if status == \
-           "running":
+        if status == "running":
 
             mark_running(
                 task_id
             )
 
         if status in [
-
             "done",
             "error",
             "timeout"
-
         ]:
 
             mark_completed(
                 task_id,
                 status
             )
-
 
     # =====================
     # PROGRESS
@@ -502,48 +557,37 @@ def on_message(
             0
         )
 
-        print(
-
-            "Progress:",
-            node,
-            stage,
-            str(progress) + "%"
-
+        logger.info(
+            "Progress update",
+            extra={
+                "node": node,
+                "stage": stage,
+                "progress": progress
+            }
         )
-
-        # STORE FULL PAYLOAD
 
         update_progress(
             node,
             payload
         )
 
-        # OPTIONAL DETAIL
-
         if stage == "system":
 
-            print(
-
-                "SYSTEM:",
-                node,
-                "RAM",
-                payload.get(
-                    "memory_free_kb"
-                ),
-                "KB",
-                "CPU",
-                payload.get(
-                    "cpu_percent"
-                ),
-                "%",
-                "TEMP",
-                payload.get(
-                    "temperature"
-                ),
-                "C"
-
+            logger.debug(
+                "System metrics",
+                extra={
+                    "node": node,
+                    "ram_kb": payload.get(
+                        "memory_free_kb"
+                    ),
+                    "cpu": payload.get(
+                        "cpu_percent"
+                    ),
+                    "temp": payload.get(
+                        "temperature"
+                    )
+                }
             )
-
 
     # =====================
     # RESULT
@@ -553,86 +597,94 @@ def on_message(
         "cluster/result"
     ):
 
-        print(
+        logger.info(
             "Result received"
         )
 
-        node = payload.get(
-            "node"
-        )
+        try:
 
-        result = payload.get(
-            "result"
-        )
-
-        if not node or \
-           not result:
-
-            print(
-                "Invalid result payload"
+            node = payload.get(
+                "node"
             )
 
-            return
-
-        filename = result.get(
-            "filename",
-            "result.csv"
-        )
-
-        data = result.get(
-            "data"
-        )
-
-        if not data:
-
-            print(
-                "Result data kosong"
+            result = payload.get(
+                "result"
             )
 
-            return
+            if not node or not result:
 
-        handle_result(
+                logger.warning(
+                    "Invalid result payload"
+                )
 
-            node,
-            filename,
-            data
+                return
 
-        )
+            filename = result.get(
+                "filename",
+                "result.csv"
+            )
+
+            data = result.get(
+                "data"
+            )
+
+            if not data:
+
+                logger.warning(
+                    "Empty result data"
+                )
+
+                return
+
+            handle_result(
+                node,
+                filename,
+                data
+            )
+
+            logger.info(
+                "Result stored",
+                extra={
+                    "node": node,
+                    "file": filename
+                }
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Result handling failed"
+            )
 
 
-# =========================
+# =========================================================
 # MQTT SETUP
-# =========================
+# =========================================================
 
 client = mqtt.Client()
 
 client.on_connect = on_connect
-
 client.on_message = on_message
 
 client.connect(
-
     MQTT_BROKER,
     1883,
     60
-
 )
 
 client.loop_start()
 
-
-# =========================
+# =========================================================
 # INITIAL TASK
-# =========================
+# =========================================================
 
 add_task(
     DEFAULT_TASK.copy()
 )
 
-
-# =========================
+# =========================================================
 # DISPATCH TASK
-# =========================
+# =========================================================
 
 def dispatch_task():
 
@@ -649,9 +701,7 @@ def dispatch_task():
     if not node:
         return
 
-    topic = \
-        "cluster/task/" \
-        + node
+    topic = "cluster/task/" + node
 
     try:
 
@@ -665,47 +715,47 @@ def dispatch_task():
             "running"
         )
 
-        running_tasks[
-            task["task_id"]
-        ] = {
+        with state_lock:
 
-            "task": task,
-            "start_time":
-                time.time(),
-            "node": node
+            running_tasks[
+                task["task_id"]
+            ] = {
 
-        }
+                "task": task,
+                "start_time": time.time(),
+                "node": node
 
-        print(
+            }
 
-            "Task sent to",
-            node,
-            task["task_id"]
-
-        )
-
-        ready_nodes.discard(
-            node
-        )
+            ready_nodes.discard(
+                node
+            )
 
         update_node_list()
 
-    except Exception as e:
+        logger.info(
+            "Task dispatched",
+            extra={
+                "task_id": task["task_id"],
+                "node": node
+            }
+        )
 
-        print(
-            "Publish failed:",
-            e
+    except Exception:
+
+        logger.exception(
+            "Failed to dispatch task"
         )
 
 
-# =========================
+# =========================================================
 # MAIN LOOP
-# =========================
+# =========================================================
 
 def coordinator_loop():
 
-    print(
-        "[COORDINATOR] Loop started"
+    logger.info(
+        "Coordinator loop started"
     )
 
     while service_running:
@@ -724,44 +774,40 @@ def coordinator_loop():
                 TASK_DISPATCH_INTERVAL
             )
 
-        except Exception as e:
+        except Exception:
 
-            print(
-                "[COORDINATOR ERROR]",
-                e
+            logger.exception(
+                "Coordinator loop error"
             )
 
             time.sleep(2)
 
 
-# =========================
+# =========================================================
 # SERVICE ENTRYPOINT
-# =========================
+# =========================================================
 
 def start_coordinator():
 
-    print(
-        "[SERVICE] Starting coordinator"
+    logger.info(
+        "Starting coordinator service"
     )
 
     thread = threading.Thread(
-
         target=coordinator_loop,
-
         daemon=True
-
     )
 
     thread.start()
 
-    print(
-        "[SERVICE] Coordinator running"
+    logger.info(
+        "Coordinator running"
     )
 
 
-# =========================
+# =========================================================
 # STOP SERVICE
-# =========================
+# =========================================================
 
 def stop_coordinator():
 
@@ -769,6 +815,6 @@ def stop_coordinator():
 
     service_running = False
 
-    print(
-        "[SERVICE] Coordinator stopped"
+    logger.warning(
+        "Coordinator stopped"
     )
