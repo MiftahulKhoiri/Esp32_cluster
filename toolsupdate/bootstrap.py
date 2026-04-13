@@ -59,17 +59,27 @@ def install_requirements():
 # ===============================
 
 def bootstrap():
+
     # ===============================
     # 1. Pastikan venv
     # ===============================
     if not VENV_DIR.exists():
+
         create_venv()
+
         os.environ["ESP32_BOOTSTRAPPED"] = "1"
+
         restart_in_venv()
 
+        return
+
     if not in_virtualenv():
+
         os.environ["ESP32_BOOTSTRAPPED"] = "1"
+
         restart_in_venv()
+
+        return
 
     # ===============================
     # 2. Dependency
@@ -79,10 +89,22 @@ def bootstrap():
     # ===============================
     # 3. Auto update
     # ===============================
-    updater = SelfUpdater(repo_dir=str(BASE_DIR))
+    updater = SelfUpdater(
+        repo_dir=str(BASE_DIR)
+    )
+
     if updater.update_if_needed():
-        log.warning("Restart setelah update...")
+
+        log.warning(
+            "Restart setelah update..."
+        )
+
+        os.environ["ESP32_BOOTSTRAPPED"] = "1"
+
         restart_in_venv()
+
+        return
+
 
 def bootstrap1():
 
