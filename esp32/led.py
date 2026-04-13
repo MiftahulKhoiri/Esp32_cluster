@@ -29,7 +29,7 @@ PERIOD_READY = 1500
 
 _led = None
 
-_timer = Timer(-1)
+_timer = Timer(1)
 
 _state = STATE_IDLE
 
