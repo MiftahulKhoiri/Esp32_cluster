@@ -140,7 +140,7 @@ def main():
     start_services()
 
     print("")
-    print("System ready")
+    print("Server cluster ESP32 sudah siap: ")
     print("")
 
     while services_running:
