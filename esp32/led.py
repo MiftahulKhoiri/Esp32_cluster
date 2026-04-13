@@ -1,4 +1,5 @@
 from machine import Pin, Timer
+import micropython
 
 
 # =========================
@@ -9,6 +10,7 @@ LED_PIN = 2
 
 STATE_IDLE = "idle"
 STATE_WIFI = "wifi_connecting"
+STATE_WIFI_CONNECTED = "wifi_connected"
 STATE_OTA = "ota_updating"
 STATE_MQTT = "mqtt_connected"
 STATE_RUNNING = "running"
@@ -20,7 +22,6 @@ PERIOD_WIFI = 500
 PERIOD_OTA = 100
 PERIOD_RUNNING = 1000
 PERIOD_ERROR = 2000
-PERIOD_READY = 1500
 
 
 # =========================
@@ -42,9 +43,11 @@ def init(pin=LED_PIN):
 
     global _led
 
-    _led = Pin(pin, Pin.OUT)
+    if _led is None:
 
-    _led.value(0)
+        _led = Pin(pin, Pin.OUT)
+
+        _led.value(0)
 
 
 # =========================
@@ -53,9 +56,18 @@ def init(pin=LED_PIN):
 
 def _toggle(timer):
 
-    if _led:
+    try:
 
-        _led.value(not _led.value())
+        if _led:
+
+            _led.value(
+                not _led.value()
+            )
+
+    except Exception:
+
+        # prevent crash inside interrupt
+        pass
 
 
 # =========================
@@ -97,13 +109,11 @@ def set_state(new_state):
     except:
         pass
 
+    # ---------------------
+
     if new_state == STATE_IDLE:
 
         _led.value(0)
-
-    elif new_state == STATE_MQTT:
-
-        _led.value(1)
 
     elif new_state == STATE_WIFI:
 
@@ -112,6 +122,16 @@ def set_state(new_state):
             mode=Timer.PERIODIC,
             callback=_toggle
         )
+
+    elif new_state == STATE_WIFI_CONNECTED:
+
+        # short confirmation blink
+        _led.value(1)
+
+    elif new_state == STATE_MQTT:
+
+        # steady ON
+        _led.value(1)
 
     elif new_state == STATE_OTA:
 
@@ -139,11 +159,8 @@ def set_state(new_state):
 
     elif new_state == STATE_READY:
 
-        _timer.init(
-            period=PERIOD_READY,
-            mode=Timer.PERIODIC,
-            callback=_toggle
-        )
+        # steady ON
+        _led.value(1)
 
     else:
 
