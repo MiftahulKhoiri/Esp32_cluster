@@ -1,9 +1,26 @@
 import time
 import os
-import base64
 import sys
 import ujson
 import machine
+import gc
+
+# =========================
+# BASE64 COMPAT
+# =========================
+
+try:
+    import ubinascii as _b64
+
+    def b64decode(data):
+        return _b64.a2b_base64(data)
+
+except ImportError:
+    import base64 as _b64
+
+    def b64decode(data):
+        return _b64.b64decode(data)
+
 
 try:
     import led
@@ -20,8 +37,7 @@ PROGRAM_DIR = "programs"
 DATA_DIR = "data"
 
 DEFAULT_TIMEOUT = 10
-
-TRAINING_TIMEOUT = 300   # seconds watchdog
+TRAINING_TIMEOUT = 300   # seconds
 
 
 # =========================
@@ -57,10 +73,8 @@ def send_progress(stage, percent):
         }
 
         client.publish(
-
             "cluster/progress/" + NODE_ID,
             ujson.dumps(payload)
-
         )
 
     except Exception as e:
@@ -80,23 +94,31 @@ def reload_module(module_name):
 
         del sys.modules[module_name]
 
+        gc.collect()
+
 
 # =========================
 # RESUME META
 # =========================
 
+def get_meta_filename(filename):
+
+    return filename + ".meta"
+
+
 def get_meta_path(filename):
 
-    return DATA_DIR + "/" + filename + ".meta"
+    return DATA_DIR + "/" + get_meta_filename(filename)
 
 
 def load_last_chunk(filename):
 
-    path = get_meta_path(filename)
+    meta_file = get_meta_filename(filename)
 
-    if path not in os.listdir(DATA_DIR):
-
+    if meta_file not in os.listdir(DATA_DIR):
         return 0
+
+    path = get_meta_path(filename)
 
     try:
 
@@ -106,7 +128,9 @@ def load_last_chunk(filename):
 
             return meta.get("last_chunk", 0)
 
-    except:
+    except Exception as e:
+
+        print("Meta load error:", e)
 
         return 0
 
@@ -120,13 +144,9 @@ def save_last_chunk(filename, chunk):
         with open(path, "w") as f:
 
             f.write(
-
                 ujson.dumps({
-
                     "last_chunk": chunk
-
                 })
-
             )
 
     except Exception as e:
@@ -136,17 +156,19 @@ def save_last_chunk(filename, chunk):
 
 def clear_meta(filename):
 
-    path = get_meta_path(filename)
+    meta_file = get_meta_filename(filename)
 
     try:
 
-        if filename + ".meta" in os.listdir(DATA_DIR):
+        if meta_file in os.listdir(DATA_DIR):
 
-            os.remove(path)
+            os.remove(
+                get_meta_path(filename)
+            )
 
-    except:
+    except Exception as e:
 
-        pass
+        print("Meta clear error:", e)
 
 
 # =========================
@@ -155,9 +177,25 @@ def clear_meta(filename):
 
 def start_watchdog():
 
-    wdt = machine.WDT(timeout=TRAINING_TIMEOUT * 1000)
+    try:
 
-    return wdt
+        timeout_ms = TRAINING_TIMEOUT * 1000
+
+        wdt = machine.WDT(
+            timeout=timeout_ms
+        )
+
+        return wdt
+
+    except Exception:
+
+        print(
+            "WDT fallback to 120s"
+        )
+
+        return machine.WDT(
+            timeout=120000
+        )
 
 
 # =========================
@@ -171,7 +209,9 @@ def run_task(data):
     try:
 
         if LED_AVAILABLE:
-            led.set_state(led.STATE_RUNNING)
+            led.set_state(
+                led.STATE_RUNNING
+            )
 
         task_type = data.get("type")
 
@@ -210,7 +250,9 @@ def run_task(data):
     finally:
 
         if LED_AVAILABLE:
-            led.set_state(led.STATE_READY)
+            led.set_state(
+                led.STATE_READY
+            )
 
 
 # =========================
@@ -223,21 +265,43 @@ def handle_upload_program(task):
 
     data_base64 = task.get("data")
 
-    send_progress("upload_program", 0)
+    send_progress(
+        "upload_program",
+        0
+    )
 
     path = PROGRAM_DIR + "/" + filename
 
-    data = base64.b64decode(data_base64)
+    try:
+
+        data = b64decode(data_base64)
+
+    except Exception as e:
+
+        print("Decode error:", e)
+
+        return {
+
+            "status": "error",
+            "message": "decode failed"
+
+        }
 
     with open(path, "wb") as f:
 
         f.write(data)
 
-    module_name = filename.replace(".py", "")
+    module_name = filename.replace(
+        ".py",
+        ""
+    )
 
     reload_module(module_name)
 
-    send_progress("upload_program", 100)
+    send_progress(
+        "upload_program",
+        100
+    )
 
     print("Program saved:", filename)
 
@@ -249,28 +313,35 @@ def handle_upload_program(task):
 
 
 # =========================
-# UPLOAD CHUNK (RESUME)
+# UPLOAD CHUNK
 # =========================
 
 def handle_upload_chunk(task):
 
     filename = task.get("filename")
 
-    chunk_index = task.get("chunk_index")
+    chunk_index = task.get(
+        "chunk_index"
+    )
 
-    total_chunks = task.get("total_chunks")
+    total_chunks = task.get(
+        "total_chunks"
+    )
 
-    auto_train = task.get("auto_train", False)
+    auto_train = task.get(
+        "auto_train",
+        False
+    )
 
-    last_chunk = load_last_chunk(filename)
+    last_chunk = load_last_chunk(
+        filename
+    )
 
     if chunk_index <= last_chunk:
 
         print(
-
             "Skip chunk",
             chunk_index
-
         )
 
         return {
@@ -279,11 +350,21 @@ def handle_upload_chunk(task):
 
         }
 
-    data = base64.b64decode(
+    try:
 
-        task.get("data")
+        data = b64decode(
+            task.get("data")
+        )
 
-    )
+    except Exception as e:
+
+        print("Decode error:", e)
+
+        return {
+
+            "status": "error"
+
+        }
 
     path = DATA_DIR + "/" + filename
 
@@ -297,35 +378,25 @@ def handle_upload_chunk(task):
         f.write(data)
 
     save_last_chunk(
-
         filename,
         chunk_index
-
     )
 
     percent = int(
-
         (chunk_index / total_chunks) * 100
-
     )
 
     send_progress(
-
         "upload",
         percent
-
     )
 
     print(
-
         "Chunk",
         chunk_index,
         "/",
         total_chunks
-
     )
-
-    # FILE COMPLETE
 
     if chunk_index == total_chunks:
 
@@ -349,69 +420,88 @@ def handle_upload_chunk(task):
 
 
 # =========================
-# TRAINING + WATCHDOG
+# TRAINING
 # =========================
 
 def handle_training(task):
 
     program = task.get(
-
         "program",
         "train_model.py"
-
     )
 
     module_name = program.replace(
-
         ".py",
         ""
-
     )
 
     if PROGRAM_DIR not in sys.path:
 
         sys.path.append(
-
             PROGRAM_DIR
-
         )
 
-    reload_module(module_name)
+    reload_module(
+        module_name
+    )
 
     wdt = start_watchdog()
 
-    send_progress("training", 10)
+    send_progress(
+        "training",
+        10
+    )
 
-    module = __import__(module_name)
+    try:
 
-    send_progress("training", 40)
+        module = __import__(
+            module_name
+        )
 
-    start_time = time.time()
+        send_progress(
+            "training",
+            40
+        )
 
-    result = None
-
-    while True:
+        start_time = time.time()
 
         wdt.feed()
 
         result = module.run()
 
-        break
+        duration = time.time() - start_time
 
-    duration = time.time() - start_time
+        send_progress(
+            "training",
+            100
+        )
 
-    send_progress("training", 100)
+        print(
+            "Training done",
+            duration
+        )
 
-    print(
+        return {
 
-        "Training done",
-        duration
+            "status": "training_done",
+            "result": result
 
-    )
+        }
 
-    return {
+    except Exception as e:
 
-        "status": "training_done",
-        "result": result
+        print(
+            "Training error:",
+            e
+        )
 
-    }
+        return {
+
+            "status": "error",
+            "message": str(e)
+
+        }
+
+    finally:
+
+        gc.collect()
