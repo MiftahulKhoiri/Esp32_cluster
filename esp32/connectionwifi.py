@@ -16,6 +16,27 @@ MAX_RETRIES = 5
 RETRY_DELAY = 5
 
 
+# =========================
+# GET WLAN
+# =========================
+
+def get_wlan():
+
+    wlan = network.WLAN(network.STA_IF)
+
+    if not wlan.active():
+
+        wlan.active(True)
+
+        time.sleep(1)
+
+    return wlan
+
+
+# =========================
+# HARD RESET WIFI
+# =========================
+
 def reset_wifi():
 
     wlan = network.WLAN(network.STA_IF)
@@ -38,6 +59,10 @@ def reset_wifi():
     return wlan
 
 
+# =========================
+# CONNECT WIFI
+# =========================
+
 def connect_wifi(timeout=20, retry=True):
 
     retries = 0
@@ -49,7 +74,7 @@ def connect_wifi(timeout=20, retry=True):
         print("Connecting WiFi...")
 
         if LED_AVAILABLE:
-            led.set_state(led.STATE_WIFI)
+            led.set_state("wifi_connecting")
 
         try:
 
@@ -65,10 +90,6 @@ def connect_wifi(timeout=20, retry=True):
             retries += 1
 
             if retries >= MAX_RETRIES:
-
-                if LED_AVAILABLE:
-                    led.set_state(led.STATE_ERROR)
-
                 return False
 
             time.sleep(RETRY_DELAY)
@@ -86,7 +107,7 @@ def connect_wifi(timeout=20, retry=True):
                 print("IP:", wlan.ifconfig()[0])
 
                 if LED_AVAILABLE:
-                    led.set_state(led.STATE_WIFI_CONNECTED)
+                    led.set_state("wifi_connected")
 
                 return True
 
@@ -109,10 +130,51 @@ def connect_wifi(timeout=20, retry=True):
             print("WiFi failed")
 
             if LED_AVAILABLE:
-                led.set_state(led.STATE_ERROR)
+                led.set_state("error")
 
             return False
 
         print("Retrying WiFi in", RETRY_DELAY, "sec")
 
         time.sleep(RETRY_DELAY)
+
+
+# =========================
+# CHECK WIFI
+# =========================
+
+def is_connected():
+
+    wlan = network.WLAN(network.STA_IF)
+
+    return wlan.isconnected()
+
+
+# =========================
+# AUTO RECONNECT
+# =========================
+
+def ensure_connection():
+
+    wlan = network.WLAN(network.STA_IF)
+
+    if not wlan.isconnected():
+
+        print("WiFi lost")
+
+        connect_wifi()
+
+
+# =========================
+# DISCONNECT
+# =========================
+
+def disconnect():
+
+    wlan = network.WLAN(network.STA_IF)
+
+    if wlan.isconnected():
+
+        wlan.disconnect()
+
+        print("WiFi disconnected")
