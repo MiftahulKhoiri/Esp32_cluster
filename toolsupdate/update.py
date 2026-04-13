@@ -8,7 +8,7 @@ import os
 
 from toolsupdate.logger import get_logger
 
-log = get_logger("AI_SELF_UPDATE")
+log = get_logger("SERVER_SELF_UPDATE")
 
 
 class SelfUpdater:
