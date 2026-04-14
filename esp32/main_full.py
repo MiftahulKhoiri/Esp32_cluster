@@ -893,14 +893,390 @@ def send_heartbeat():
 
         print("Heartbeat error:", e)
 
+# =========================================================
+# RELIABILITY LAYER FOR ESP32 WROOM
+# =========================================================
+
+import os
+import ujson
+import gc
+import time
+import machine
 
 # =========================================================
-# MAIN LOOP
+# CONFIG
 # =========================================================
+
+QUEUE_DIR = "tasks"
+
+QUEUE_FILE = "tasks/queue.json"
+
+STATE_FILE = "tasks/state.json"
+
+MAX_QUEUE_SIZE = 25
+
+MEMORY_WARNING_KB = 40
+
+MEMORY_CRITICAL_KB = 20
+
+AUTO_RESET_ENABLED = True
+
+current_task_id = None
+
+# =========================================================
+# INIT STORAGE
+# =========================================================
+
+def init_task_storage():
+
+    if QUEUE_DIR not in os.listdir():
+
+        os.mkdir(QUEUE_DIR)
+
+    if "queue.json" not in os.listdir(QUEUE_DIR):
+
+        with open(QUEUE_FILE, "w") as f:
+
+            f.write("[]")
+
+# =========================================================
+# LOAD QUEUE
+# =========================================================
+
+def load_queue():
+
+    try:
+
+        with open(QUEUE_FILE, "r") as f:
+
+            data = ujson.loads(f.read())
+
+            return data
+
+    except:
+
+        return []
+
+# =========================================================
+# SAVE QUEUE
+# =========================================================
+
+def save_queue(queue):
+
+    temp = QUEUE_FILE + ".tmp"
+
+    with open(temp, "w") as f:
+
+        f.write(ujson.dumps(queue))
+
+    if QUEUE_FILE in os.listdir():
+
+        os.remove(QUEUE_FILE)
+
+    os.rename(temp, QUEUE_FILE)
+
+# =========================================================
+# ADD TASK
+# =========================================================
+
+def add_task(task):
+
+    queue = load_queue()
+
+    if len(queue) >= MAX_QUEUE_SIZE:
+
+        print("Queue full")
+
+        return False
+
+    task["status"] = "pending"
+
+    queue.append(task)
+
+    save_queue(queue)
+
+    return True
+
+# =========================================================
+# GET NEXT TASK
+# =========================================================
+
+def get_next_task():
+
+    queue = load_queue()
+
+    for task in queue:
+
+        if task.get("status") == "pending":
+
+            return task
+
+    return None
+
+# =========================================================
+# UPDATE TASK STATUS
+# =========================================================
+
+def update_task_status(task_id, status):
+
+    queue = load_queue()
+
+    for task in queue:
+
+        if task.get("task_id") == task_id:
+
+            task["status"] = status
+
+    save_queue(queue)
+
+# =========================================================
+# REMOVE TASK
+# =========================================================
+
+def remove_task(task_id):
+
+    queue = load_queue()
+
+    queue = [
+
+        t for t in queue
+
+        if t.get("task_id") != task_id
+
+    ]
+
+    save_queue(queue)
+
+# =========================================================
+# SAVE STATE
+# =========================================================
+
+def save_state(task_id, stage):
+
+    data = {
+
+        "current_task": task_id,
+
+        "stage": stage,
+
+        "timestamp": time.time()
+
+    }
+
+    with open(STATE_FILE, "w") as f:
+
+        f.write(ujson.dumps(data))
+
+# =========================================================
+# LOAD STATE
+# =========================================================
+
+def load_state():
+
+    try:
+
+        with open(STATE_FILE, "r") as f:
+
+            return ujson.loads(f.read())
+
+    except:
+
+        return None
+
+# =========================================================
+# CLEAR STATE
+# =========================================================
+
+def clear_state():
+
+    try:
+
+        if "state.json" in os.listdir(QUEUE_DIR):
+
+            os.remove(STATE_FILE)
+
+    except:
+
+        pass
+
+# =========================================================
+# RECOVERY
+# =========================================================
+
+def recover_tasks():
+
+    queue = load_queue()
+
+    changed = False
+
+    for task in queue:
+
+        if task.get("status") == "running":
+
+            print("Recovering task:", task["task_id"])
+
+            task["status"] = "pending"
+
+            changed = True
+
+    if changed:
+
+        save_queue(queue)
+
+# =========================================================
+# MEMORY GUARD
+# =========================================================
+
+def memory_guard():
+
+    gc.collect()
+
+    free_kb = gc.mem_free() // 1024
+
+    if free_kb < MEMORY_WARNING_KB:
+
+        print("WARNING memory:", free_kb)
+
+    if free_kb < MEMORY_CRITICAL_KB:
+
+        print("CRITICAL memory:", free_kb)
+
+        if AUTO_RESET_ENABLED:
+
+            print("Resetting device")
+
+            time.sleep(2)
+
+            machine.reset()
+
+# =========================================================
+# SAFE EXECUTION WRAPPER
+# =========================================================
+
+def execute_task_safe(task, run_task):
+
+    global current_task_id
+
+    task_id = task.get("task_id")
+
+    current_task_id = task_id
+
+    update_task_status(
+
+        task_id,
+
+        "running"
+
+    )
+
+    save_state(
+
+        task_id,
+
+        "running"
+
+    )
+
+    try:
+
+        result = run_task(task)
+
+        update_task_status(
+
+            task_id,
+
+            result.get(
+
+                "status",
+
+                "done"
+
+            )
+
+        )
+
+        remove_task(task_id)
+
+        clear_state()
+
+        return result
+
+    except Exception as e:
+
+        print("Task crash:", e)
+
+        update_task_status(
+
+            task_id,
+
+            "error"
+
+        )
+
+        return {
+
+            "status": "error",
+
+            "message": str(e)
+
+        }
+
+# =========================================================
+# BOOT RECOVERY
+# =========================================================
+
+def boot_recovery():
+
+    init_task_storage()
+
+    recover_tasks()
+
+    state = load_state()
+
+    if state:
+
+        print(
+
+            "Recovered state:",
+
+            state
+
+        )
+
+# =========================================================
+# QUEUE WORKER LOOP
+# =========================================================
+
+def queue_worker(run_task):
+
+    task = get_next_task()
+
+    if not task:
+
+        return None
+
+    print(
+
+        "Executing queued task:",
+
+        task.get("task_id")
+
+    )
+
+    return execute_task_safe(
+
+        task,
+
+        run_task
+
+    )
+
 
 def main():
 
     print("Booting node:", NODE_ID)
+
+    boot_recovery()
 
     set_led_state(STATE_WIFI)
 
@@ -926,9 +1302,13 @@ def main():
 
             client.check_msg()
 
+            queue_worker()
+
             send_heartbeat()
 
             send_system_status()
+
+            memory_guard()
 
         except Exception as e:
 
