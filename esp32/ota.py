@@ -19,8 +19,20 @@ except:
     LED_AVAILABLE = False
 
 
+# =========================
+# HASH SUPPORT
+# =========================
+
+try:
+    import hashlib
+except ImportError:
+    hashlib = None
+
+
 TEMP_FILE = "main_new.py"
 TARGET_FILE = "main.py"
+
+EXPECTED_HASH = None
 
 
 # =========================
@@ -37,10 +49,48 @@ def get_url(path):
 
 
 # =========================
+# SHA256 CALCULATION
+# =========================
+
+def calculate_sha256(filepath):
+
+    if hashlib is None:
+
+        print("Hashlib not available")
+
+        return None
+
+    try:
+
+        sha = hashlib.sha256()
+
+        with open(filepath, "rb") as f:
+
+            while True:
+
+                chunk = f.read(1024)
+
+                if not chunk:
+                    break
+
+                sha.update(chunk)
+
+        return sha.hexdigest()
+
+    except Exception as e:
+
+        print("Hash calculation failed:", e)
+
+        return None
+
+
+# =========================
 # CHECK UPDATE
 # =========================
 
 def check_update():
+
+    global EXPECTED_HASH
 
     for attempt in range(3):
 
@@ -62,14 +112,28 @@ def check_update():
 
             response.close()
 
-            server_version = data["version"]
+            server_version = data.get(
+                "version"
+            )
+
+            server_hash = data.get(
+                "sha256"
+            )
 
             print("Current:", VERSION)
             print("Server :", server_version)
 
+            if not server_version:
+
+                print("Invalid version data")
+
+                return False
+
             if server_version != VERSION:
 
                 print("Update available")
+
+                EXPECTED_HASH = server_hash
 
                 return True
 
@@ -94,6 +158,8 @@ def check_update():
 # =========================
 
 def download_firmware():
+
+    global EXPECTED_HASH
 
     for attempt in range(3):
 
@@ -131,7 +197,6 @@ def download_firmware():
                     )
 
                     if not chunk:
-
                         break
 
                     f.write(chunk)
@@ -146,6 +211,11 @@ def download_firmware():
                     "Download empty"
                 )
 
+                try:
+                    os.remove(TEMP_FILE)
+                except:
+                    pass
+
                 return False
 
             print(
@@ -153,6 +223,49 @@ def download_firmware():
                 size,
                 "bytes"
             )
+
+            # =========================
+            # VERIFY HASH
+            # =========================
+
+            if EXPECTED_HASH:
+
+                print(
+                    "Verifying firmware hash"
+                )
+
+                file_hash = calculate_sha256(
+                    TEMP_FILE
+                )
+
+                print(
+                    "Expected:",
+                    EXPECTED_HASH
+                )
+
+                print(
+                    "Actual  :",
+                    file_hash
+                )
+
+                if file_hash != EXPECTED_HASH:
+
+                    print(
+                        "Hash mismatch"
+                    )
+
+                    try:
+
+                        os.remove(
+                            TEMP_FILE
+                        )
+
+                    except:
+                        pass
+
+                    return False
+
+                print("Hash OK")
 
             return True
 
@@ -162,6 +275,11 @@ def download_firmware():
                 "Download failed:",
                 e
             )
+
+            try:
+                os.remove(TEMP_FILE)
+            except:
+                pass
 
             time.sleep(2)
 
@@ -175,6 +293,40 @@ def download_firmware():
 def apply_update():
 
     try:
+
+        if TEMP_FILE not in os.listdir():
+
+            print(
+                "Firmware file missing"
+            )
+
+            return False
+
+        # =========================
+        # FINAL HASH CHECK
+        # =========================
+
+        if EXPECTED_HASH:
+
+            print(
+                "Final integrity check"
+            )
+
+            file_hash = calculate_sha256(
+                TEMP_FILE
+            )
+
+            if file_hash != EXPECTED_HASH:
+
+                print(
+                    "Integrity check failed"
+                )
+
+                os.remove(
+                    TEMP_FILE
+                )
+
+                return False
 
         if TARGET_FILE in os.listdir():
 
@@ -200,6 +352,11 @@ def apply_update():
             e
         )
 
+        try:
+            os.remove(TEMP_FILE)
+        except:
+            pass
+
         return False
 
 
@@ -209,35 +366,58 @@ def apply_update():
 
 def perform_update():
 
-    try:
+    attempts = 0
 
-        if not check_update():
+    MAX_ATTEMPTS = 3
 
-            return False
+    while attempts < MAX_ATTEMPTS:
 
-        if not download_firmware():
+        try:
 
-            return False
+            print(
+                "OTA attempt:",
+                attempts + 1
+            )
 
-        if not apply_update():
+            if not check_update():
 
-            return False
+                return False
 
-        print(
-            "Restarting device"
-        )
+            if not download_firmware():
 
-        time.sleep(2)
+                attempts += 1
 
-        machine.reset()
+                continue
 
-        return True
+            if not apply_update():
 
-    except Exception as e:
+                attempts += 1
 
-        print(
-            "OTA error:",
-            e
-        )
+                continue
 
-        return False
+            print(
+                "Restarting device"
+            )
+
+            time.sleep(2)
+
+            machine.reset()
+
+            return True
+
+        except Exception as e:
+
+            print(
+                "OTA error:",
+                e
+            )
+
+            attempts += 1
+
+            time.sleep(2)
+
+    print(
+        "OTA failed after retries"
+    )
+
+    return False
