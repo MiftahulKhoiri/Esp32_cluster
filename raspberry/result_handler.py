@@ -28,6 +28,7 @@ HASIL_DIR = os.path.join(
 
 lock = threading.Lock()
 
+
 # =========================
 # INIT
 # =========================
@@ -43,6 +44,64 @@ def ensure_directories():
         HASIL_DIR,
         exist_ok=True
     )
+
+
+# =========================
+# ATOMIC WRITE
+# =========================
+
+def atomic_write(file_path, data):
+
+    temp_path = file_path + ".tmp"
+
+    try:
+
+        with open(
+            temp_path,
+            "wb"
+        ) as f:
+
+            f.write(data)
+
+            try:
+                f.flush()
+            except:
+                pass
+
+        if os.path.exists(
+            file_path
+        ):
+            os.remove(
+                file_path
+            )
+
+        os.rename(
+            temp_path,
+            file_path
+        )
+
+        return True
+
+    except Exception as e:
+
+        logger.exception(
+            "Atomic write failed"
+        )
+
+        try:
+
+            if os.path.exists(
+                temp_path
+            ):
+                os.remove(
+                    temp_path
+                )
+
+        except:
+            pass
+
+        return False
+
 
 # =========================
 # SAVE RESULT
@@ -99,12 +158,13 @@ def save_node_result(
 
         with lock:
 
-            with open(
+            success = atomic_write(
                 file_path,
-                "wb"
-            ) as f:
+                data
+            )
 
-                f.write(data)
+            if not success:
+                return False
 
         print(
             f"Result saved: {file_path}"
@@ -112,7 +172,7 @@ def save_node_result(
 
         return True
 
-    except Exception as e:
+    except Exception:
 
         logger.exception(
             "Gagal menyimpan result"
@@ -126,11 +186,6 @@ def save_node_result(
 # =========================
 
 def all_results_received():
-
-    """
-    Check apakah semua node sudah kirim result
-    berdasarkan file di TEMP_DIR
-    """
 
     ensure_directories()
 
@@ -168,6 +223,8 @@ def merge_results(
         output_name
     )
 
+    temp_output = output_path + ".tmp"
+
     files = sorted(
         os.listdir(
             TEMP_DIR
@@ -187,7 +244,7 @@ def merge_results(
         with lock:
 
             with open(
-                output_path,
+                temp_output,
                 "wb"
             ) as outfile:
 
@@ -207,6 +264,18 @@ def merge_results(
                             infile.read()
                         )
 
+            if os.path.exists(
+                output_path
+            ):
+                os.remove(
+                    output_path
+                )
+
+            os.rename(
+                temp_output,
+                output_path
+            )
+
         print("")
         print(
             f"Final result created: {output_path}"
@@ -218,6 +287,18 @@ def merge_results(
         logger.exception(
             "Merge result gagal"
         )
+
+        try:
+
+            if os.path.exists(
+                temp_output
+            ):
+                os.remove(
+                    temp_output
+                )
+
+        except:
+            pass
 
 
 # =========================
@@ -239,9 +320,17 @@ def clear_temp():
                 file
             )
 
-            os.remove(
-                file_path
-            )
+            try:
+
+                os.remove(
+                    file_path
+                )
+
+            except Exception:
+
+                logger.exception(
+                    "Failed removing temp file"
+                )
 
 
 # =========================
@@ -261,7 +350,6 @@ def handle_result(
     )
 
     if not success:
-
         return
 
     if all_results_received():
