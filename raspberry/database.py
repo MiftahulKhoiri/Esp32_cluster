@@ -12,6 +12,11 @@ BACKUP_INTERVAL = 300
 
 MAX_BACKUPS = 5
 
+# retry control
+
+BASE_RETRY_DELAY = 5
+MAX_RETRY_DELAY = 300
+
 db_lock = threading.Lock()
 
 backup_thread_started = False
@@ -130,7 +135,6 @@ def restore_if_missing():
     if os.path.exists(
         DB_FILE
     ):
-
         return
 
     backups = sorted(
@@ -140,7 +144,6 @@ def restore_if_missing():
     )
 
     if not backups:
-
         return
 
     latest = backups[-1]
@@ -210,7 +213,6 @@ def rotate_backups():
     )
 
     if len(backups) <= MAX_BACKUPS:
-
         return
 
     remove_count = len(backups) - MAX_BACKUPS
@@ -234,7 +236,6 @@ def rotate_backups():
             )
 
         except Exception:
-
             pass
 
 
@@ -263,7 +264,6 @@ def start_backup_thread():
     global backup_thread_started
 
     if backup_thread_started:
-
         return
 
     backup_thread_started = True
@@ -320,6 +320,8 @@ def insert_task(task):
 
 def get_pending_task():
 
+    now = time.time()
+
     with db_lock:
 
         conn = get_connection()
@@ -341,7 +343,6 @@ def get_pending_task():
         conn.close()
 
     if not row:
-
         return None
 
     import ast
@@ -389,21 +390,36 @@ def update_status(task_id, status):
 
 
 # =========================
-# RETRY
+# RETRY WITH BACKOFF
 # =========================
 
 def increment_retry(task):
+
+    retry = task.get(
+        "retry",
+        0
+    ) + 1
+
+    delay = min(
+        BASE_RETRY_DELAY * (2 ** retry),
+        MAX_RETRY_DELAY
+    )
+
+    print(
+        "Retry",
+        retry,
+        "delay",
+        delay,
+        "seconds"
+    )
+
+    time.sleep(delay)
 
     with db_lock:
 
         conn = get_connection()
 
         cursor = conn.cursor()
-
-        retry = task.get(
-            "retry",
-            0
-        ) + 1
 
         now = time.time()
 
