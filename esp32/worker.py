@@ -39,6 +39,37 @@ DATA_DIR = "data"
 DEFAULT_TIMEOUT = 10
 TRAINING_TIMEOUT = 300   # seconds
 
+# =========================
+# STORAGE SAFETY
+# =========================
+
+MIN_FREE_SPACE_KB = 100
+
+
+# =========================
+# DISK SPACE CHECK
+# =========================
+
+def get_free_space_kb():
+
+    try:
+
+        stat = os.statvfs("/")
+
+        block_size = stat[0]
+
+        free_blocks = stat[3]
+
+        free_bytes = block_size * free_blocks
+
+        return free_bytes // 1024
+
+    except Exception as e:
+
+        print("Disk check error:", e)
+
+        return 0
+
 
 # =========================
 # INIT DIRECTORIES
@@ -63,6 +94,9 @@ def send_progress(stage, percent):
 
         from config import NODE_ID
         from main import client
+
+        if client is None:
+            return
 
         payload = {
 
@@ -181,17 +215,13 @@ def start_watchdog():
 
         timeout_ms = TRAINING_TIMEOUT * 1000
 
-        wdt = machine.WDT(
+        return machine.WDT(
             timeout=timeout_ms
         )
 
-        return wdt
-
     except Exception:
 
-        print(
-            "WDT fallback to 120s"
-        )
+        print("WDT fallback to 120s")
 
         return machine.WDT(
             timeout=120000
@@ -287,9 +317,41 @@ def handle_upload_program(task):
 
         }
 
-    with open(path, "wb") as f:
+    # =========================
+    # DISK SPACE CHECK
+    # =========================
 
-        f.write(data)
+    free_kb = get_free_space_kb()
+
+    required_kb = len(data) // 1024 + 10
+
+    if free_kb < required_kb or free_kb < MIN_FREE_SPACE_KB:
+
+        print("Disk full")
+
+        return {
+
+            "status": "error",
+            "message": "disk full"
+
+        }
+
+    try:
+
+        with open(path, "wb") as f:
+
+            f.write(data)
+
+    except Exception as e:
+
+        print("Write error:", e)
+
+        return {
+
+            "status": "error",
+            "message": "write failed"
+
+        }
 
     module_name = filename.replace(
         ".py",
@@ -366,6 +428,25 @@ def handle_upload_chunk(task):
 
         }
 
+    # =========================
+    # DISK SPACE CHECK
+    # =========================
+
+    free_kb = get_free_space_kb()
+
+    required_kb = len(data) // 1024 + 10
+
+    if free_kb < required_kb or free_kb < MIN_FREE_SPACE_KB:
+
+        print("Disk full during chunk")
+
+        return {
+
+            "status": "error",
+            "message": "disk full"
+
+        }
+
     path = DATA_DIR + "/" + filename
 
     mode = "ab"
@@ -373,9 +454,22 @@ def handle_upload_chunk(task):
     if chunk_index == 1:
         mode = "wb"
 
-    with open(path, mode) as f:
+    try:
 
-        f.write(data)
+        with open(path, mode) as f:
+
+            f.write(data)
+
+    except Exception as e:
+
+        print("Chunk write error:", e)
+
+        return {
+
+            "status": "error",
+            "message": "write failed"
+
+        }
 
     save_last_chunk(
         filename,
@@ -465,9 +559,13 @@ def handle_training(task):
 
         start_time = time.time()
 
+        # feed watchdog before execution
         wdt.feed()
 
         result = module.run()
+
+        # feed watchdog after execution
+        wdt.feed()
 
         duration = time.time() - start_time
 
