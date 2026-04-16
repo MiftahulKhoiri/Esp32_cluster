@@ -12,8 +12,16 @@ except:
     LED_AVAILABLE = False
 
 
+# =========================
+# CONFIG
+# =========================
+
 MAX_RETRIES = 5
 RETRY_DELAY = 5
+
+MAX_FAILURE_BEFORE_RESET = 3
+
+failure_counter = 0
 
 
 # =========================
@@ -65,6 +73,8 @@ def reset_wifi():
 
 def connect_wifi(timeout=20, retry=True):
 
+    global failure_counter
+
     retries = 0
 
     while True:
@@ -89,9 +99,6 @@ def connect_wifi(timeout=20, retry=True):
 
             retries += 1
 
-            if retries >= MAX_RETRIES:
-                return False
-
             time.sleep(RETRY_DELAY)
 
             continue
@@ -108,6 +115,11 @@ def connect_wifi(timeout=20, retry=True):
 
                 if LED_AVAILABLE:
                     led.set_state("wifi_connected")
+
+                # reset failure counter
+                failure_counter = 0
+
+                gc.collect()
 
                 return True
 
@@ -132,9 +144,34 @@ def connect_wifi(timeout=20, retry=True):
             if LED_AVAILABLE:
                 led.set_state("error")
 
+            failure_counter += 1
+
+            print(
+                "Failure count:",
+                failure_counter
+            )
+
+            # =========================
+            # ESCALATION RESET
+            # =========================
+
+            if failure_counter >= MAX_FAILURE_BEFORE_RESET:
+
+                print(
+                    "Too many failures — rebooting"
+                )
+
+                time.sleep(2)
+
+                machine.reset()
+
             return False
 
-        print("Retrying WiFi in", RETRY_DELAY, "sec")
+        print(
+            "Retrying WiFi in",
+            RETRY_DELAY,
+            "sec"
+        )
 
         time.sleep(RETRY_DELAY)
 
