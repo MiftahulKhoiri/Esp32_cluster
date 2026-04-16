@@ -2,6 +2,7 @@ from umqtt.simple import MQTTClient
 import ujson
 import time
 import machine
+import gc
 
 from config import (
     MQTT_BROKER,
@@ -30,6 +31,20 @@ except:
 client = None
 last_heartbeat = 0
 
+# =========================
+# MEMORY MANAGEMENT
+# =========================
+
+last_gc = 0
+GC_INTERVAL = 60  # seconds
+
+# =========================
+# MQTT RECOVERY
+# =========================
+
+mqtt_fail_count = 0
+MAX_MQTT_FAIL = 5
+
 
 # =========================
 # SAFE RESULT SEND
@@ -47,8 +62,6 @@ def send_result(result):
             "result": result
 
         })
-
-        # protect large payload
 
         if len(payload) > 50000:
 
@@ -175,15 +188,11 @@ def on_message(topic, msg):
 
         topic = topic.decode()
 
-        # OTA
-
         if topic == "cluster/ota/update":
 
             handle_ota_command()
 
             return
-
-        # TASK
 
         if topic == "cluster/task/" + NODE_ID:
 
@@ -211,10 +220,6 @@ def on_message(topic, msg):
                 task_id,
                 "running"
             )
-
-            # =========================
-            # RUN TASK SAFE
-            # =========================
 
             try:
 
@@ -272,6 +277,44 @@ def register_node():
         "cluster/register",
         payload
     )
+
+
+# =========================
+# PERIODIC GC
+# =========================
+
+def periodic_gc():
+
+    global last_gc
+
+    now = time.time()
+
+    if now - last_gc < GC_INTERVAL:
+        return
+
+    last_gc = now
+
+    try:
+
+        before = gc.mem_free()
+
+        gc.collect()
+
+        after = gc.mem_free()
+
+        print(
+            "GC:",
+            before,
+            "->",
+            after
+        )
+
+    except Exception as e:
+
+        print(
+            "GC error:",
+            e
+        )
 
 
 # =========================
@@ -377,6 +420,19 @@ def main():
 
     print("Booting node:", NODE_ID)
 
+    try:
+
+        cause = machine.reset_cause()
+
+        print(
+            "Reset cause:",
+            cause
+        )
+
+    except:
+
+        pass
+
     if LED_AVAILABLE:
 
         led.set_state(
@@ -386,8 +442,6 @@ def main():
     connect_wifi()
 
     time.sleep(2)
-
-    # OTA CHECK
 
     try:
 
@@ -409,7 +463,9 @@ def main():
 
             send_heartbeat()
 
-            send_system_status()
+            send_system_status(client)
+
+            periodic_gc()
 
         except Exception as e:
 
