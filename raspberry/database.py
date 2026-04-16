@@ -6,19 +6,11 @@ import os
 
 DB_FILE = "tasks.db"
 
-# =========================
-# BACKUP CONFIG
-# =========================
-
 BACKUP_DIR = "db_backup"
 
-BACKUP_INTERVAL = 300      # seconds
+BACKUP_INTERVAL = 300
 
 MAX_BACKUPS = 5
-
-# =========================
-# GLOBAL LOCK
-# =========================
 
 db_lock = threading.Lock()
 
@@ -77,9 +69,45 @@ def init_db():
 
         conn.close()
 
+    recover_running_tasks()
+
     start_backup_thread()
 
     print("Database ready")
+
+
+# =========================
+# CRASH RECOVERY
+# =========================
+
+def recover_running_tasks():
+
+    with db_lock:
+
+        conn = get_connection()
+
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE tasks
+            SET status='pending'
+            WHERE status='running'
+            """
+        )
+
+        affected = cursor.rowcount
+
+        conn.commit()
+
+        conn.close()
+
+    if affected:
+
+        print(
+            "Recovered running tasks:",
+            affected
+        )
 
 
 # =========================
