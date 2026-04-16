@@ -37,11 +37,7 @@ PROGRAM_DIR = "programs"
 DATA_DIR = "data"
 
 DEFAULT_TIMEOUT = 10
-TRAINING_TIMEOUT = 300   # seconds
-
-# =========================
-# STORAGE SAFETY
-# =========================
+TRAINING_TIMEOUT = 300
 
 MIN_FREE_SPACE_KB = 100
 
@@ -69,6 +65,46 @@ def get_free_space_kb():
         print("Disk check error:", e)
 
         return 0
+
+
+# =========================
+# ATOMIC WRITE
+# =========================
+
+def atomic_write(path, data, mode="wb"):
+
+    temp_path = path + ".tmp"
+
+    try:
+
+        with open(temp_path, mode) as f:
+
+            f.write(data)
+
+            try:
+                f.flush()
+            except:
+                pass
+
+        if path in os.listdir():
+
+            os.remove(path)
+
+        os.rename(temp_path, path)
+
+        return True
+
+    except Exception as e:
+
+        print("Atomic write error:", e)
+
+        try:
+            if temp_path in os.listdir():
+                os.remove(temp_path)
+        except:
+            pass
+
+        return False
 
 
 # =========================
@@ -132,7 +168,7 @@ def reload_module(module_name):
 
 
 # =========================
-# RESUME META
+# META FILE
 # =========================
 
 def get_meta_filename(filename):
@@ -173,19 +209,11 @@ def save_last_chunk(filename, chunk):
 
     path = get_meta_path(filename)
 
-    try:
+    data = ujson.dumps({
+        "last_chunk": chunk
+    })
 
-        with open(path, "w") as f:
-
-            f.write(
-                ujson.dumps({
-                    "last_chunk": chunk
-                })
-            )
-
-    except Exception as e:
-
-        print("Meta save error:", e)
+    atomic_write(path, data)
 
 
 def clear_meta(filename):
@@ -317,10 +345,6 @@ def handle_upload_program(task):
 
         }
 
-    # =========================
-    # DISK SPACE CHECK
-    # =========================
-
     free_kb = get_free_space_kb()
 
     required_kb = len(data) // 1024 + 10
@@ -336,15 +360,7 @@ def handle_upload_program(task):
 
         }
 
-    try:
-
-        with open(path, "wb") as f:
-
-            f.write(data)
-
-    except Exception as e:
-
-        print("Write error:", e)
+    if not atomic_write(path, data):
 
         return {
 
@@ -428,10 +444,6 @@ def handle_upload_chunk(task):
 
         }
 
-    # =========================
-    # DISK SPACE CHECK
-    # =========================
-
     free_kb = get_free_space_kb()
 
     required_kb = len(data) // 1024 + 10
@@ -449,16 +461,17 @@ def handle_upload_chunk(task):
 
     path = DATA_DIR + "/" + filename
 
-    mode = "ab"
-
-    if chunk_index == 1:
-        mode = "wb"
-
     try:
 
-        with open(path, mode) as f:
+        if chunk_index == 1:
 
-            f.write(data)
+            atomic_write(path, data)
+
+        else:
+
+            with open(path, "ab") as f:
+
+                f.write(data)
 
     except Exception as e:
 
@@ -559,12 +572,10 @@ def handle_training(task):
 
         start_time = time.time()
 
-        # feed watchdog before execution
         wdt.feed()
 
         result = module.run()
 
-        # feed watchdog after execution
         wdt.feed()
 
         duration = time.time() - start_time
