@@ -3,6 +3,8 @@ import time
 import uuid
 import threading
 import sys
+import os
+import signal
 
 import paho.mqtt.client as mqtt
 
@@ -45,6 +47,13 @@ MAX_MQTT_FAIL = 5
 reconnect_lock = threading.Lock()
 
 # =========================================================
+# SERVICE WATCHDOG
+# =========================================================
+
+last_loop_time = time.time()
+WATCHDOG_TIMEOUT = 120
+
+# =========================================================
 # SIMPLE CONSOLE OUTPUT
 # =========================================================
 
@@ -85,6 +94,7 @@ completed_tasks = {}
 node_last_seen = {}
 
 service_running = True
+shutdown_requested = False
 
 
 # =========================================================
@@ -174,6 +184,83 @@ def check_node_health():
 
 
 # =========================================================
+# TASK TIMEOUT
+# =========================================================
+
+def check_timeouts():
+
+    now = time.time()
+
+    timed_out = []
+
+    with state_lock:
+
+        for task_id, info in list(
+            running_tasks.items()
+        ):
+
+            start_time = info.get(
+                "start_time"
+            )
+
+            if not start_time:
+                continue
+
+            if now - start_time > TASK_TIMEOUT:
+
+                timed_out.append(
+                    task_id
+                )
+
+    for task_id in timed_out:
+
+        print_event(
+            f"Task timeout: {task_id}"
+        )
+
+        update_status(
+            task_id,
+            "timeout"
+        )
+
+
+# =========================================================
+# SERVICE WATCHDOG
+# =========================================================
+
+def watchdog_monitor():
+
+    global last_loop_time
+
+    while service_running:
+
+        try:
+
+            now = time.time()
+
+            if now - last_loop_time > WATCHDOG_TIMEOUT:
+
+                print_event(
+                    "Watchdog timeout — restarting service"
+                )
+
+                time.sleep(2)
+
+                os.execv(
+                    sys.executable,
+                    [sys.executable] + sys.argv
+                )
+
+            time.sleep(10)
+
+        except Exception:
+
+            logger.exception(
+                "Watchdog error"
+            )
+
+
+# =========================================================
 # MQTT RECOVERY
 # =========================================================
 
@@ -214,7 +301,7 @@ def reconnect_mqtt():
 
                 return
 
-            except Exception as e:
+            except Exception:
 
                 mqtt_fail_count += 1
 
@@ -236,6 +323,66 @@ def reconnect_mqtt():
                     )
 
                 time.sleep(5)
+
+
+# =========================================================
+# GRACEFUL SHUTDOWN
+# =========================================================
+
+def shutdown_handler(signum, frame):
+
+    global service_running
+    global shutdown_requested
+
+    if shutdown_requested:
+        return
+
+    shutdown_requested = True
+
+    print_event(
+        f"Shutdown signal received: {signum}"
+    )
+
+    service_running = False
+
+    try:
+
+        print_event(
+            "Stopping MQTT loop..."
+        )
+
+        client.loop_stop()
+
+    except:
+        pass
+
+    try:
+
+        print_event(
+            "Disconnecting MQTT..."
+        )
+
+        client.disconnect()
+
+    except:
+        pass
+
+    print_event(
+        "Shutdown complete"
+    )
+
+    sys.exit(0)
+
+
+signal.signal(
+    signal.SIGINT,
+    shutdown_handler
+)
+
+signal.signal(
+    signal.SIGTERM,
+    shutdown_handler
+)
 
 
 # =========================================================
@@ -389,9 +536,36 @@ client.loop_start()
 # INITIAL TASK
 # =========================================================
 
+def add_task(task):
+
+    task_id = str(
+        uuid.uuid4()
+    )
+
+    task["task_id"] = task_id
+
+    insert_task(task)
+
+    print_event(
+        f"Task added: {task_id}"
+    )
+
+
 add_task(
     DEFAULT_TASK.copy()
 )
+
+
+# =========================================================
+# START WATCHDOG THREAD
+# =========================================================
+
+watchdog_thread = threading.Thread(
+    target=watchdog_monitor,
+    daemon=True
+)
+
+watchdog_thread.start()
 
 
 # =========================================================
@@ -399,6 +573,8 @@ add_task(
 # =========================================================
 
 def coordinator_loop():
+
+    global last_loop_time
 
     print_event(
         "Coordinator started"
@@ -408,7 +584,11 @@ def coordinator_loop():
 
         try:
 
+            last_loop_time = time.time()
+
             check_node_health()
+
+            check_timeouts()
 
             time.sleep(
                 TASK_DISPATCH_INTERVAL
