@@ -2,13 +2,9 @@ import gc
 import time
 import os
 import machine
+import ujson
 
-try:
-    import ujson
-    from config import NODE_ID
-    from main import client
-except:
-    client = None
+from config import NODE_ID
 
 
 # =========================
@@ -148,7 +144,7 @@ def get_temperature():
 
         return int(temp)
 
-    except:
+    except Exception:
 
         return -1
 
@@ -188,7 +184,7 @@ def get_system_status():
 # SEND STATUS
 # =========================
 
-def send_system_status():
+def send_system_status(client):
 
     global last_report
 
@@ -236,7 +232,9 @@ def send_system_status():
 
         }
 
-        if client:
+        # publish only if client exists
+
+        if client is not None:
 
             client.publish(
 
