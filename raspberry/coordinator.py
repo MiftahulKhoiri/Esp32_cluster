@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 import threading
+import sys
 
 import paho.mqtt.client as mqtt
 
@@ -33,6 +34,15 @@ from raspberry.progress_monitor import (
 )
 
 logger = get_logger("coordinator")
+
+# =========================================================
+# MQTT RECOVERY CONFIG
+# =========================================================
+
+mqtt_fail_count = 0
+MAX_MQTT_FAIL = 5
+
+reconnect_lock = threading.Lock()
 
 # =========================================================
 # SIMPLE CONSOLE OUTPUT
@@ -76,25 +86,16 @@ node_last_seen = {}
 
 service_running = True
 
+
 # =========================================================
 # DATABASE
 # =========================================================
 
-try:
+init_db()
 
-    init_db()
-
-    print_event(
-        "Database initialized"
-    )
-
-except Exception:
-
-    logger.exception(
-        "Database initialization failed"
-    )
-
-    raise
+print_event(
+    "Database initialized"
+)
 
 
 # =========================================================
@@ -173,125 +174,72 @@ def check_node_health():
 
 
 # =========================================================
-# TASK MANAGEMENT
+# MQTT RECOVERY
 # =========================================================
 
-def add_task(task):
+def reconnect_mqtt():
 
-    task_id = str(
-        uuid.uuid4()
-    )
+    global mqtt_fail_count
 
-    task["task_id"] = task_id
-    task["retry"] = 0
-    task["created"] = time.time()
+    with reconnect_lock:
 
-    insert_task(task)
+        try:
 
-    print_event(
-        f"Task stored: {task_id}"
-    )
+            print_event("Reconnecting MQTT...")
 
-    return task_id
+            client.loop_stop()
 
+            client.disconnect()
 
-def get_next_task():
+        except:
+            pass
 
-    try:
+        while True:
 
-        return get_pending_task()
+            try:
 
-    except Exception:
+                client.connect(
+                    MQTT_BROKER,
+                    1883,
+                    60
+                )
 
-        logger.exception(
-            "Failed to fetch task"
-        )
+                client.loop_start()
 
-        return None
+                mqtt_fail_count = 0
 
+                print_event(
+                    "MQTT reconnected"
+                )
 
-def mark_running(task_id):
+                return
 
-    with state_lock:
+            except Exception as e:
 
-        if task_id in running_tasks:
+                mqtt_fail_count += 1
 
-            running_tasks[
-                task_id
-            ]["start_time"] = time.time()
+                print_event(
+                    f"MQTT reconnect failed: {mqtt_fail_count}"
+                )
 
-    print_event(
-        f"Task started: {task_id}"
-    )
+                if mqtt_fail_count >= MAX_MQTT_FAIL:
 
+                    print_event(
+                        "Too many MQTT failures — restarting process"
+                    )
 
-def mark_completed(task_id, status):
+                    time.sleep(2)
 
-    with state_lock:
+                    os.execv(
+                        sys.executable,
+                        [sys.executable] + sys.argv
+                    )
 
-        if task_id not in running_tasks:
-            return
-
-        task_info = running_tasks[
-            task_id
-        ]
-
-        task = task_info["task"]
-
-        retry = task.get(
-            "retry",
-            0
-        )
-
-    if status in [
-        "error",
-        "timeout"
-    ]:
-
-        if retry < RETRY_LIMIT:
-
-            increment_retry(task)
-
-            print_event(
-                f"Retry task: {task_id}"
-            )
-
-        else:
-
-            update_status(
-                task_id,
-                "failed"
-            )
-
-            print_event(
-                f"Task failed: {task_id}"
-            )
-
-    else:
-
-        update_status(
-            task_id,
-            status
-        )
-
-        print_event(
-            f"Task finished: {task_id} {status}"
-        )
-
-    with state_lock:
-
-        completed_tasks[
-            task_id
-        ] = status
-
-        running_tasks.pop(
-            task_id,
-            None
-        )
+                time.sleep(5)
 
 
 # =========================================================
-# MQTT
+# MQTT CALLBACK
 # =========================================================
 
 def on_connect(client, userdata, flags, rc):
@@ -319,6 +267,15 @@ def on_connect(client, userdata, flags, rc):
         )
 
 
+def on_disconnect(client, userdata, rc):
+
+    print_event(
+        f"MQTT disconnected: {rc}"
+    )
+
+    reconnect_mqtt()
+
+
 def on_message(client, userdata, msg):
 
     topic = msg.topic
@@ -341,20 +298,13 @@ def on_message(client, userdata, msg):
 
         with state_lock:
 
-            node_last_seen[
-                node
-            ] = time.time()
+            node_last_seen[node] = time.time()
 
-            if status in [
-                "ready",
-                "online"
-            ]:
+            if status in ["ready", "online"]:
 
                 if node not in ready_nodes:
 
-                    ready_nodes.add(
-                        node
-                    )
+                    ready_nodes.add(node)
 
                     print_event(
                         f"Node ready: {node}"
@@ -364,9 +314,7 @@ def on_message(client, userdata, msg):
 
                 if node in ready_nodes:
 
-                    ready_nodes.discard(
-                        node
-                    )
+                    ready_nodes.discard(node)
 
                     print_event(
                         f"Node offline: {node}"
@@ -375,43 +323,10 @@ def on_message(client, userdata, msg):
         update_node_list()
 
     elif topic.startswith(
-        "cluster/task_status"
-    ):
-
-        task_id = payload.get(
-            "task_id"
-        )
-
-        status = payload.get(
-            "status"
-        )
-
-        if status == "running":
-
-            mark_running(
-                task_id
-            )
-
-        if status in [
-
-            "done",
-            "error",
-            "timeout"
-
-        ]:
-
-            mark_completed(
-                task_id,
-                status
-            )
-
-    elif topic.startswith(
         "cluster/progress"
     ):
 
-        node = payload.get(
-            "node"
-        )
+        node = payload.get("node")
 
         progress = payload.get(
             "progress",
@@ -458,6 +373,7 @@ def on_message(client, userdata, msg):
 client = mqtt.Client()
 
 client.on_connect = on_connect
+client.on_disconnect = on_disconnect
 client.on_message = on_message
 
 client.connect(
@@ -468,6 +384,7 @@ client.connect(
 
 client.loop_start()
 
+
 # =========================================================
 # INITIAL TASK
 # =========================================================
@@ -475,6 +392,7 @@ client.loop_start()
 add_task(
     DEFAULT_TASK.copy()
 )
+
 
 # =========================================================
 # MAIN LOOP
@@ -489,10 +407,6 @@ def coordinator_loop():
     while service_running:
 
         try:
-
-            dispatch_task()
-
-            check_timeouts()
 
             check_node_health()
 
