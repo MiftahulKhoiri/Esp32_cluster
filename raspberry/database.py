@@ -1,9 +1,20 @@
 import sqlite3
 import time
+import threading
 
 
 DB_FILE = "tasks.db"
 
+# =========================
+# GLOBAL LOCK
+# =========================
+
+db_lock = threading.Lock()
+
+
+# =========================
+# CONNECTION
+# =========================
 
 def get_connection():
 
@@ -13,100 +24,104 @@ def get_connection():
     )
 
 
+# =========================
+# INIT
+# =========================
+
 def init_db():
 
-    conn = get_connection()
+    with db_lock:
 
-    cursor = conn.cursor()
+        conn = get_connection()
 
-    cursor.execute(
+        cursor = conn.cursor()
 
-        """
-        CREATE TABLE IF NOT EXISTS tasks (
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
 
-            task_id TEXT PRIMARY KEY,
+                task_id TEXT PRIMARY KEY,
 
-            payload TEXT,
+                payload TEXT,
 
-            status TEXT,
+                status TEXT,
 
-            retry INTEGER,
+                retry INTEGER,
 
-            created REAL,
+                created REAL,
 
-            updated REAL
+                updated REAL
 
+            )
+            """
         )
-        """
 
-    )
+        conn.commit()
 
-    conn.commit()
+        conn.close()
 
-    conn.close()
+        print("Database ready")
 
-    print("Database ready")
 
+# =========================
+# INSERT
+# =========================
 
 def insert_task(task):
 
-    conn = get_connection()
+    with db_lock:
 
-    cursor = conn.cursor()
+        conn = get_connection()
 
-    now = time.time()
+        cursor = conn.cursor()
 
-    cursor.execute(
+        now = time.time()
 
-        """
-        INSERT INTO tasks
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-
-        (
-
-            task["task_id"],
-
-            str(task),
-
-            "pending",
-
-            task.get("retry", 0),
-
-            now,
-
-            now
-
+        cursor.execute(
+            """
+            INSERT INTO tasks
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                task["task_id"],
+                str(task),
+                "pending",
+                task.get("retry", 0),
+                now,
+                now
+            )
         )
 
-    )
+        conn.commit()
 
-    conn.commit()
+        conn.close()
 
-    conn.close()
 
+# =========================
+# GET
+# =========================
 
 def get_pending_task():
 
-    conn = get_connection()
+    with db_lock:
 
-    cursor = conn.cursor()
+        conn = get_connection()
 
-    cursor.execute(
+        cursor = conn.cursor()
 
-        """
-        SELECT task_id, payload
-        FROM tasks
-        WHERE status='pending'
-        ORDER BY created ASC
-        LIMIT 1
-        """
+        cursor.execute(
+            """
+            SELECT task_id, payload
+            FROM tasks
+            WHERE status='pending'
+            ORDER BY created ASC
+            LIMIT 1
+            """
+        )
 
-    )
+        row = cursor.fetchone()
 
-    row = cursor.fetchone()
-
-    conn.close()
+        conn.close()
 
     if not row:
         return None
@@ -120,64 +135,70 @@ def get_pending_task():
     return task
 
 
+# =========================
+# UPDATE
+# =========================
+
 def update_status(task_id, status):
 
-    conn = get_connection()
+    with db_lock:
 
-    cursor = conn.cursor()
+        conn = get_connection()
 
-    now = time.time()
+        cursor = conn.cursor()
 
-    cursor.execute(
+        now = time.time()
 
-        """
-        UPDATE tasks
-        SET status=?,
-            updated=?
-        WHERE task_id=?
-        """,
-
-        (
-            status,
-            now,
-            task_id
+        cursor.execute(
+            """
+            UPDATE tasks
+            SET status=?,
+                updated=?
+            WHERE task_id=?
+            """,
+            (
+                status,
+                now,
+                task_id
+            )
         )
 
-    )
+        conn.commit()
 
-    conn.commit()
+        conn.close()
 
-    conn.close()
 
+# =========================
+# RETRY
+# =========================
 
 def increment_retry(task):
 
-    conn = get_connection()
+    with db_lock:
 
-    cursor = conn.cursor()
+        conn = get_connection()
 
-    retry = task.get("retry", 0) + 1
+        cursor = conn.cursor()
 
-    now = time.time()
+        retry = task.get("retry", 0) + 1
 
-    cursor.execute(
+        now = time.time()
 
-        """
-        UPDATE tasks
-        SET retry=?,
-            status='pending',
-            updated=?
-        WHERE task_id=?
-        """,
-
-        (
-            retry,
-            now,
-            task["task_id"]
+        cursor.execute(
+            """
+            UPDATE tasks
+            SET retry=?,
+                status='pending',
+                updated=?
+            WHERE task_id=?
+            """,
+            (
+                retry,
+                now,
+                task["task_id"]
+            )
         )
 
-    )
+        conn.commit()
 
-    conn.commit()
-
-    conn.close()
+        conn.close()
