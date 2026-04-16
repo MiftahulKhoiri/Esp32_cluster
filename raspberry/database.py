@@ -1,15 +1,28 @@
 import sqlite3
 import time
 import threading
-
+import shutil
+import os
 
 DB_FILE = "tasks.db"
+
+# =========================
+# BACKUP CONFIG
+# =========================
+
+BACKUP_DIR = "db_backup"
+
+BACKUP_INTERVAL = 300      # seconds
+
+MAX_BACKUPS = 5
 
 # =========================
 # GLOBAL LOCK
 # =========================
 
 db_lock = threading.Lock()
+
+backup_thread_started = False
 
 
 # =========================
@@ -29,6 +42,10 @@ def get_connection():
 # =========================
 
 def init_db():
+
+    ensure_backup_dir()
+
+    restore_if_missing()
 
     with db_lock:
 
@@ -60,7 +77,179 @@ def init_db():
 
         conn.close()
 
-        print("Database ready")
+    start_backup_thread()
+
+    print("Database ready")
+
+
+# =========================
+# BACKUP SYSTEM
+# =========================
+
+def ensure_backup_dir():
+
+    if not os.path.exists(
+        BACKUP_DIR
+    ):
+
+        os.makedirs(
+            BACKUP_DIR
+        )
+
+
+def restore_if_missing():
+
+    if os.path.exists(
+        DB_FILE
+    ):
+
+        return
+
+    backups = sorted(
+        os.listdir(
+            BACKUP_DIR
+        )
+    )
+
+    if not backups:
+
+        return
+
+    latest = backups[-1]
+
+    src = os.path.join(
+        BACKUP_DIR,
+        latest
+    )
+
+    shutil.copy2(
+        src,
+        DB_FILE
+    )
+
+    print(
+        "Database restored from backup:",
+        latest
+    )
+
+
+def create_backup():
+
+    timestamp = int(
+        time.time()
+    )
+
+    backup_file = os.path.join(
+        BACKUP_DIR,
+        f"tasks_{timestamp}.db"
+    )
+
+    try:
+
+        with db_lock:
+
+            if not os.path.exists(
+                DB_FILE
+            ):
+                return
+
+            shutil.copy2(
+                DB_FILE,
+                backup_file
+            )
+
+        rotate_backups()
+
+        print(
+            "Database backup created:",
+            backup_file
+        )
+
+    except Exception as e:
+
+        print(
+            "Backup error:",
+            e
+        )
+
+
+def rotate_backups():
+
+    backups = sorted(
+        os.listdir(
+            BACKUP_DIR
+        )
+    )
+
+    if len(backups) <= MAX_BACKUPS:
+
+        return
+
+    remove_count = len(backups) - MAX_BACKUPS
+
+    for i in range(remove_count):
+
+        old_file = os.path.join(
+            BACKUP_DIR,
+            backups[i]
+        )
+
+        try:
+
+            os.remove(
+                old_file
+            )
+
+            print(
+                "Old backup removed:",
+                backups[i]
+            )
+
+        except Exception:
+
+            pass
+
+
+def backup_worker():
+
+    while True:
+
+        try:
+
+            time.sleep(
+                BACKUP_INTERVAL
+            )
+
+            create_backup()
+
+        except Exception as e:
+
+            print(
+                "Backup worker error:",
+                e
+            )
+
+
+def start_backup_thread():
+
+    global backup_thread_started
+
+    if backup_thread_started:
+
+        return
+
+    backup_thread_started = True
+
+    thread = threading.Thread(
+        target=backup_worker,
+        daemon=True
+    )
+
+    thread.start()
+
+    print(
+        "Database backup thread started"
+    )
 
 
 # =========================
@@ -124,13 +313,16 @@ def get_pending_task():
         conn.close()
 
     if not row:
+
         return None
 
     import ast
 
     task_id, payload = row
 
-    task = ast.literal_eval(payload)
+    task = ast.literal_eval(
+        payload
+    )
 
     return task
 
@@ -180,7 +372,10 @@ def increment_retry(task):
 
         cursor = conn.cursor()
 
-        retry = task.get("retry", 0) + 1
+        retry = task.get(
+            "retry",
+            0
+        ) + 1
 
         now = time.time()
 
