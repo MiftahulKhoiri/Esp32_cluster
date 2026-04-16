@@ -1,14 +1,11 @@
 import os
 import base64
 import threading
+import hashlib
 
 from toolsupdate.logger import get_logger
 
 logger = get_logger("result_handler")
-
-# =========================
-# DIRECTORY
-# =========================
 
 BASE_DIR = os.path.dirname(
     os.path.abspath(__file__)
@@ -47,6 +44,41 @@ def ensure_directories():
 
 
 # =========================
+# CHECKSUM
+# =========================
+
+def calculate_checksum(data):
+
+    sha = hashlib.sha256()
+
+    sha.update(data)
+
+    return sha.hexdigest()
+
+
+def verify_checksum(data, expected):
+
+    if not expected:
+        return True
+
+    actual = calculate_checksum(data)
+
+    if actual != expected:
+
+        logger.error(
+            "Checksum mismatch",
+            extra={
+                "expected": expected,
+                "actual": actual
+            }
+        )
+
+        return False
+
+    return True
+
+
+# =========================
 # ATOMIC WRITE
 # =========================
 
@@ -82,21 +114,19 @@ def atomic_write(file_path, data):
 
         return True
 
-    except Exception as e:
+    except Exception:
 
         logger.exception(
             "Atomic write failed"
         )
 
         try:
-
             if os.path.exists(
                 temp_path
             ):
                 os.remove(
                     temp_path
                 )
-
         except:
             pass
 
@@ -110,7 +140,8 @@ def atomic_write(file_path, data):
 def save_node_result(
     node,
     filename,
-    data_base64
+    data_base64,
+    checksum=None
 ):
 
     ensure_directories()
@@ -130,7 +161,6 @@ def save_node_result(
             data_base64,
             str
         ):
-
             data_base64 = data_base64.encode()
 
         data = base64.b64decode(
@@ -147,6 +177,12 @@ def save_node_result(
             }
         )
 
+        return False
+
+    if not verify_checksum(
+        data,
+        checksum
+    ):
         return False
 
     file_path = os.path.join(
@@ -194,7 +230,6 @@ def all_results_received():
     )
 
     if not files:
-
         return False
 
     nodes = set()
@@ -276,11 +311,9 @@ def merge_results(
                 output_path
             )
 
-        print("")
         print(
             f"Final result created: {output_path}"
         )
-        print("")
 
     except Exception:
 
@@ -289,14 +322,12 @@ def merge_results(
         )
 
         try:
-
             if os.path.exists(
                 temp_output
             ):
                 os.remove(
                     temp_output
                 )
-
         except:
             pass
 
@@ -340,13 +371,15 @@ def clear_temp():
 def handle_result(
     node,
     filename,
-    data_base64
+    data_base64,
+    checksum=None
 ):
 
     success = save_node_result(
         node,
         filename,
-        data_base64
+        data_base64,
+        checksum
     )
 
     if not success:
