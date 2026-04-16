@@ -31,15 +31,17 @@ except:
 client = None
 last_heartbeat = 0
 
+
 # =========================
 # MEMORY MANAGEMENT
 # =========================
 
 last_gc = 0
-GC_INTERVAL = 60  # seconds
+GC_INTERVAL = 60
+
 
 # =========================
-# MQTT RECOVERY
+# MQTT FAILURE CONTROL
 # =========================
 
 mqtt_fail_count = 0
@@ -191,7 +193,6 @@ def on_message(topic, msg):
         if topic == "cluster/ota/update":
 
             handle_ota_command()
-
             return
 
         if topic == "cluster/task/" + NODE_ID:
@@ -324,6 +325,7 @@ def periodic_gc():
 def connect_mqtt():
 
     global client
+    global mqtt_fail_count
 
     while True:
 
@@ -337,6 +339,10 @@ def connect_mqtt():
                     client.disconnect()
                 except:
                     pass
+
+                client = None
+
+            gc.collect()
 
             client = MQTTClient(
 
@@ -362,6 +368,8 @@ def connect_mqtt():
 
             print("MQTT connected")
 
+            mqtt_fail_count = 0
+
             register_node()
 
             set_ready_state()
@@ -370,7 +378,27 @@ def connect_mqtt():
 
         except Exception as e:
 
-            print("MQTT failed:", e)
+            mqtt_fail_count += 1
+
+            print(
+                "MQTT failed:",
+                e
+            )
+
+            print(
+                "MQTT failure count:",
+                mqtt_fail_count
+            )
+
+            if mqtt_fail_count >= MAX_MQTT_FAIL:
+
+                print(
+                    "Too many MQTT failures — rebooting"
+                )
+
+                time.sleep(2)
+
+                machine.reset()
 
             time.sleep(5)
 
@@ -386,7 +414,6 @@ def send_heartbeat():
     now = time.time()
 
     if now - last_heartbeat < HEARTBEAT_INTERVAL:
-
         return
 
     last_heartbeat = now
@@ -430,7 +457,6 @@ def main():
         )
 
     except:
-
         pass
 
     if LED_AVAILABLE:
