@@ -14,7 +14,6 @@ from config import (
 )
 
 from worker import run_task
-
 from system_monitor import send_system_status
 
 from connectionwifi import (
@@ -34,21 +33,29 @@ except:
 client = None
 last_heartbeat = 0
 
-
-# =========================
-# MEMORY MANAGEMENT
-# =========================
-
 last_gc = 0
-GC_INTERVAL = 60
-
-
-# =========================
-# MQTT FAILURE CONTROL
-# =========================
+GC_INTERVAL = config.GC_INTERVAL
 
 mqtt_fail_count = 0
-MAX_MQTT_FAIL = 5
+
+
+# =========================
+# SAFE PUBLISH
+# =========================
+
+def safe_publish(topic, payload):
+
+    global client
+
+    try:
+
+        client.publish(topic, payload)
+
+    except Exception as e:
+
+        print("Publish failed:", e)
+
+        raise
 
 
 # =========================
@@ -102,35 +109,25 @@ def send_result(result):
 
         })
 
-        if len(payload) > 50000:
+        if len(payload) > config.MQTT_MAX_PAYLOAD:
 
             print("Result too large")
-
-            result = {
-
-                "status": "error",
-                "message": "result too large"
-
-            }
 
             payload = ujson.dumps({
 
                 "node": NODE_ID,
-                "result": result
+                "result": {
+                    "status": "error",
+                    "message": "result too large"
+                }
 
             })
 
-        client.publish(
-            topic,
-            payload
-        )
+        safe_publish(topic, payload)
 
     except Exception as e:
 
-        print(
-            "Send result error:",
-            e
-        )
+        print("Send result error:", e)
 
 
 # =========================
@@ -152,17 +149,11 @@ def send_task_status(task_id, status):
 
         topic = "cluster/task_status/" + NODE_ID
 
-        client.publish(
-            topic,
-            payload
-        )
+        safe_publish(topic, payload)
 
     except Exception as e:
 
-        print(
-            "Task status error:",
-            e
-        )
+        print("Task status error:", e)
 
 
 # =========================
@@ -180,11 +171,9 @@ def set_ready_state():
 
         })
 
-        client.publish(
-
+        safe_publish(
             "cluster/status/" + NODE_ID,
             payload
-
         )
 
         if LED_AVAILABLE:
@@ -311,7 +300,7 @@ def register_node():
 
     })
 
-    client.publish(
+    safe_publish(
         "cluster/register",
         payload
     )
@@ -349,10 +338,7 @@ def periodic_gc():
 
     except Exception as e:
 
-        print(
-            "GC error:",
-            e
-        )
+        print("GC error:", e)
 
 
 # =========================
@@ -389,6 +375,23 @@ def connect_mqtt():
                 server=server_ip,
                 port=config.MQTT_PORT,
                 keepalive=config.MQTT_KEEPALIVE
+
+            )
+
+            # LAST WILL
+            client.set_last_will(
+
+                "cluster/status/" + NODE_ID,
+
+                ujson.dumps({
+
+                    "node": NODE_ID,
+                    "status": "offline"
+
+                }),
+
+                retain=False,
+                qos=0
 
             )
 
@@ -430,13 +433,15 @@ def connect_mqtt():
                 mqtt_fail_count
             )
 
-            if mqtt_fail_count >= MAX_MQTT_FAIL:
+            if mqtt_fail_count >= config.MQTT_MAX_FAILURE:
 
                 print(
                     "Too many MQTT failures — rebooting"
                 )
 
-                time.sleep(2)
+                time.sleep(
+                    config.REBOOT_DELAY
+                )
 
                 machine.reset()
 
@@ -469,16 +474,16 @@ def send_heartbeat():
 
         })
 
-        client.publish(
-
+        safe_publish(
             "cluster/status/" + NODE_ID,
             payload
-
         )
 
     except Exception as e:
 
         print("Heartbeat error:", e)
+
+        raise
 
 
 # =========================
@@ -526,8 +531,6 @@ def main():
         try:
 
             ensure_connection()
-
-            # MQTT health check
 
             client.ping()
 
