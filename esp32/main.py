@@ -3,6 +3,9 @@ import ujson
 import time
 import machine
 import gc
+import socket
+
+import config
 
 from config import (
     MQTT_BROKER,
@@ -46,6 +49,40 @@ GC_INTERVAL = 60
 
 mqtt_fail_count = 0
 MAX_MQTT_FAIL = 5
+
+
+# =========================
+# DNS RESOLVE SERVER
+# =========================
+
+def resolve_server():
+
+    for _ in range(config.DNS_RESOLVE_RETRY):
+
+        try:
+
+            addr = socket.getaddrinfo(
+                config.MQTT_BROKER,
+                config.MQTT_PORT
+            )[0][-1][0]
+
+            print("Resolved server:", addr)
+
+            return addr
+
+        except Exception as e:
+
+            print("DNS resolve failed:", e)
+
+            if config.SERVER_FALLBACK_IP:
+
+                print("Using fallback IP")
+
+                return config.SERVER_FALLBACK_IP
+
+            time.sleep(config.DNS_RESOLVE_DELAY)
+
+    raise RuntimeError("Server resolve failed")
 
 
 # =========================
@@ -333,6 +370,8 @@ def connect_mqtt():
 
             print("Connecting MQTT...")
 
+            server_ip = resolve_server()
+
             if client:
 
                 try:
@@ -347,8 +386,9 @@ def connect_mqtt():
             client = MQTTClient(
 
                 client_id=NODE_ID,
-                server=MQTT_BROKER,
-                keepalive=60
+                server=server_ip,
+                port=config.MQTT_PORT,
+                keepalive=config.MQTT_KEEPALIVE
 
             )
 
@@ -366,7 +406,7 @@ def connect_mqtt():
                 "cluster/ota/update"
             )
 
-            print("MQTT connected")
+            print("MQTT connected:", server_ip)
 
             mqtt_fail_count = 0
 
@@ -400,7 +440,9 @@ def connect_mqtt():
 
                 machine.reset()
 
-            time.sleep(5)
+            time.sleep(
+                config.MQTT_RECONNECT_DELAY
+            )
 
 
 # =========================
@@ -484,6 +526,10 @@ def main():
         try:
 
             ensure_connection()
+
+            # MQTT health check
+
+            client.ping()
 
             client.check_msg()
 
