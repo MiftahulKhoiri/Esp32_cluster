@@ -268,6 +268,9 @@ def reconnect_mqtt():
 
     global mqtt_fail_count
 
+    if shutdown_requested:
+        return
+
     with reconnect_lock:
 
         try:
@@ -281,7 +284,7 @@ def reconnect_mqtt():
         except:
             pass
 
-        while True:
+        while not shutdown_requested:
 
             try:
 
@@ -374,15 +377,35 @@ def shutdown_handler(signum, frame):
     sys.exit(0)
 
 
-signal.signal(
-    signal.SIGINT,
-    shutdown_handler
-)
+# =========================================================
+# SAFE SIGNAL REGISTER
+# =========================================================
 
-signal.signal(
-    signal.SIGTERM,
-    shutdown_handler
-)
+try:
+
+    if threading.current_thread() is threading.main_thread():
+
+        signal.signal(
+            signal.SIGINT,
+            shutdown_handler
+        )
+
+        signal.signal(
+            signal.SIGTERM,
+            shutdown_handler
+        )
+
+    else:
+
+        print_event(
+            "Signal handler skipped (not main thread)"
+        )
+
+except Exception:
+
+    print_event(
+        "Signal handler registration failed"
+    )
 
 
 # =========================================================
@@ -566,6 +589,18 @@ watchdog_thread = threading.Thread(
 )
 
 watchdog_thread.start()
+
+
+# =========================================================
+# START COORDINATOR LOOP THREAD
+# =========================================================
+
+coordinator_thread = threading.Thread(
+    target=lambda: coordinator_loop(),
+    daemon=True
+)
+
+coordinator_thread.start()
 
 
 # =========================================================
