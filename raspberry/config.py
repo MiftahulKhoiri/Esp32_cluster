@@ -14,7 +14,7 @@ def get_local_ip():
             socket.SOCK_DGRAM
         )
 
-        # connect ke internet dummy
+        # dummy connect
         s.connect(("8.8.8.8", 80))
 
         ip = s.getsockname()[0]
@@ -25,7 +25,10 @@ def get_local_ip():
 
     except Exception as e:
 
-        print("IP detection failed:", e)
+        print(
+            "IP detection failed:",
+            e
+        )
 
         return "127.0.0.1"
 
@@ -36,7 +39,13 @@ def get_local_ip():
 
 LOCAL_IP = get_local_ip()
 
-MQTT_BROKER = LOCAL_IP
+# MQTT selalu localhost
+# karena broker jalan di mesin yang sama
+
+MQTT_BROKER = "127.0.0.1"
+
+# OTA harus pakai IP jaringan
+# supaya ESP32 bisa akses
 
 OTA_SERVER = LOCAL_IP
 
@@ -73,4 +82,14 @@ DEFAULT_TASK = {
 # DEBUG INFO
 # =========================
 
-print("Server IP:", LOCAL_IP)
+print("================================")
+
+print("Server Network IP :", LOCAL_IP)
+
+print("MQTT Broker       :", MQTT_BROKER)
+
+print("OTA Server        :", OTA_SERVER)
+
+print("OTA Port          :", OTA_PORT)
+
+print("================================")
