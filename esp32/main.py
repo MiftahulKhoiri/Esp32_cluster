@@ -3,6 +3,9 @@ import ujson
 import time
 import machine
 import gc
+import socket
+
+import config
 
 from config import (
     MQTT_BROKER,
@@ -11,7 +14,6 @@ from config import (
 )
 
 from worker import run_task
-
 from system_monitor import send_system_status
 
 from connectionwifi import (
@@ -24,13 +26,12 @@ import ota
 try:
     import led
     LED_AVAILABLE = True
-except:
+except Exception:
     LED_AVAILABLE = False
 
 
 client = None
 last_heartbeat = 0
-
 
 # =========================
 # MEMORY MANAGEMENT
@@ -39,13 +40,46 @@ last_heartbeat = 0
 last_gc = 0
 GC_INTERVAL = 60
 
-
 # =========================
 # MQTT FAILURE CONTROL
 # =========================
 
 mqtt_fail_count = 0
 MAX_MQTT_FAIL = 5
+
+
+# =========================
+# DNS RESOLVE
+# =========================
+
+def resolve_server():
+
+    for _ in range(config.DNS_RESOLVE_RETRY):
+
+        try:
+
+            addr = socket.getaddrinfo(
+                config.MQTT_BROKER,
+                config.MQTT_PORT
+            )[0][-1][0]
+
+            print("Resolved server:", addr)
+
+            return addr
+
+        except Exception as e:
+
+            print("DNS resolve failed:", e)
+
+            if config.SERVER_FALLBACK_IP:
+
+                print("Using fallback IP")
+
+                return config.SERVER_FALLBACK_IP
+
+            time.sleep(config.DNS_RESOLVE_DELAY)
+
+    raise RuntimeError("Server resolve failed")
 
 
 # =========================
@@ -59,73 +93,27 @@ def send_result(result):
         topic = "cluster/result/" + NODE_ID
 
         payload = ujson.dumps({
-
             "node": NODE_ID,
             "result": result
-
         })
 
         if len(payload) > 50000:
 
-            print("Result too large")
-
             result = {
-
                 "status": "error",
                 "message": "result too large"
-
             }
 
             payload = ujson.dumps({
-
                 "node": NODE_ID,
                 "result": result
-
             })
 
-        client.publish(
-            topic,
-            payload
-        )
+        client.publish(topic, payload)
 
     except Exception as e:
 
-        print(
-            "Send result error:",
-            e
-        )
-
-
-# =========================
-# TASK STATUS
-# =========================
-
-def send_task_status(task_id, status):
-
-    try:
-
-        payload = ujson.dumps({
-
-            "node": NODE_ID,
-            "task_id": task_id,
-            "status": status,
-            "timestamp": time.time()
-
-        })
-
-        topic = "cluster/task_status/" + NODE_ID
-
-        client.publish(
-            topic,
-            payload
-        )
-
-    except Exception as e:
-
-        print(
-            "Task status error:",
-            e
-        )
+        print("Send result error:", e)
 
 
 # =========================
@@ -137,21 +125,16 @@ def set_ready_state():
     try:
 
         payload = ujson.dumps({
-
             "node": NODE_ID,
             "status": "ready"
-
         })
 
         client.publish(
-
             "cluster/status/" + NODE_ID,
             payload
-
         )
 
         if LED_AVAILABLE:
-
             led.set_state(
                 led.STATE_READY
             )
@@ -172,7 +155,6 @@ def handle_ota_command():
     print("OTA command received")
 
     if LED_AVAILABLE:
-
         led.set_state(
             led.STATE_OTA
         )
@@ -191,13 +173,10 @@ def on_message(topic, msg):
         topic = topic.decode()
 
         if topic == "cluster/ota/update":
-
             handle_ota_command()
             return
 
         if topic == "cluster/task/" + NODE_ID:
-
-            print("Task received")
 
             data = ujson.loads(msg)
 
@@ -206,59 +185,24 @@ def on_message(topic, msg):
                 "unknown"
             )
 
-            send_task_status(
-                task_id,
-                "received"
-            )
-
-            if LED_AVAILABLE:
-
-                led.set_state(
-                    led.STATE_RUNNING
-                )
-
-            send_task_status(
-                task_id,
-                "running"
-            )
-
             try:
 
                 result = run_task(data)
 
             except Exception as e:
 
-                print("Task crash:", e)
-
                 result = {
-
                     "status": "error",
                     "message": str(e)
-
                 }
 
             send_result(result)
-
-            final_status = result.get(
-                "status",
-                "done"
-            )
-
-            send_task_status(
-                task_id,
-                final_status
-            )
 
             set_ready_state()
 
     except Exception as e:
 
         print("Task error:", e)
-
-        send_task_status(
-            "unknown",
-            "error"
-        )
 
 
 # =========================
@@ -268,10 +212,8 @@ def on_message(topic, msg):
 def register_node():
 
     payload = ujson.dumps({
-
         "node": NODE_ID,
         "status": "online"
-
     })
 
     client.publish(
@@ -297,25 +239,11 @@ def periodic_gc():
 
     try:
 
-        before = gc.mem_free()
-
         gc.collect()
-
-        after = gc.mem_free()
-
-        print(
-            "GC:",
-            before,
-            "->",
-            after
-        )
 
     except Exception as e:
 
-        print(
-            "GC error:",
-            e
-        )
+        print("GC error:", e)
 
 
 # =========================
@@ -333,11 +261,13 @@ def connect_mqtt():
 
             print("Connecting MQTT...")
 
+            server_ip = resolve_server()
+
             if client:
 
                 try:
                     client.disconnect()
-                except:
+                except Exception:
                     pass
 
                 client = None
@@ -345,16 +275,13 @@ def connect_mqtt():
             gc.collect()
 
             client = MQTTClient(
-
                 client_id=NODE_ID,
-                server=MQTT_BROKER,
-                keepalive=60
-
+                server=server_ip,
+                port=config.MQTT_PORT,
+                keepalive=config.MQTT_KEEPALIVE
             )
 
-            client.set_callback(
-                on_message
-            )
+            client.set_callback(on_message)
 
             client.connect()
 
@@ -366,7 +293,7 @@ def connect_mqtt():
                 "cluster/ota/update"
             )
 
-            print("MQTT connected")
+            print("MQTT connected:", server_ip)
 
             mqtt_fail_count = 0
 
@@ -380,27 +307,21 @@ def connect_mqtt():
 
             mqtt_fail_count += 1
 
-            print(
-                "MQTT failed:",
-                e
-            )
+            print("MQTT failed:", e)
 
-            print(
-                "MQTT failure count:",
-                mqtt_fail_count
-            )
+            print("Failure count:", mqtt_fail_count)
 
             if mqtt_fail_count >= MAX_MQTT_FAIL:
 
-                print(
-                    "Too many MQTT failures — rebooting"
-                )
+                print("Too many failures — reboot")
 
                 time.sleep(2)
 
                 machine.reset()
 
-            time.sleep(5)
+            time.sleep(
+                config.MQTT_RECONNECT_DELAY
+            )
 
 
 # =========================
@@ -421,17 +342,13 @@ def send_heartbeat():
     try:
 
         payload = ujson.dumps({
-
             "node": NODE_ID,
             "status": "online"
-
         })
 
         client.publish(
-
             "cluster/status/" + NODE_ID,
             payload
-
         )
 
     except Exception as e:
@@ -446,18 +363,6 @@ def send_heartbeat():
 def main():
 
     print("Booting node:", NODE_ID)
-
-    try:
-
-        cause = machine.reset_cause()
-
-        print(
-            "Reset cause:",
-            cause
-        )
-
-    except:
-        pass
 
     if LED_AVAILABLE:
 
@@ -484,6 +389,10 @@ def main():
         try:
 
             ensure_connection()
+
+            # HEALTH CHECK
+
+            client.ping()
 
             client.check_msg()
 
