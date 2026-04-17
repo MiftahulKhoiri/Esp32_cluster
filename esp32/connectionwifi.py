@@ -68,6 +68,29 @@ def reset_wifi():
 
 
 # =========================
+# VALIDATE IP
+# =========================
+
+def has_valid_ip(wlan):
+
+    try:
+
+        ip = wlan.ifconfig()[0]
+
+        if ip == "0.0.0.0":
+            return False
+
+        if ip.startswith("169.254"):
+            return False
+
+        return True
+
+    except:
+
+        return False
+
+
+# =========================
 # CONNECT WIFI
 # =========================
 
@@ -109,6 +132,14 @@ def connect_wifi(timeout=20, retry=True):
 
             if wlan.isconnected():
 
+                if not has_valid_ip(wlan):
+
+                    print("Connected but no IP")
+
+                    time.sleep(1)
+
+                    continue
+
                 print("WiFi connected")
 
                 print("IP:", wlan.ifconfig()[0])
@@ -116,7 +147,6 @@ def connect_wifi(timeout=20, retry=True):
                 if LED_AVAILABLE:
                     led.set_state("wifi_connected")
 
-                # reset failure counter
                 failure_counter = 0
 
                 gc.collect()
@@ -151,10 +181,6 @@ def connect_wifi(timeout=20, retry=True):
                 failure_counter
             )
 
-            # =========================
-            # ESCALATION RESET
-            # =========================
-
             if failure_counter >= MAX_FAILURE_BEFORE_RESET:
 
                 print(
@@ -184,7 +210,10 @@ def is_connected():
 
     wlan = network.WLAN(network.STA_IF)
 
-    return wlan.isconnected()
+    if not wlan.isconnected():
+        return False
+
+    return has_valid_ip(wlan)
 
 
 # =========================
@@ -198,6 +227,14 @@ def ensure_connection():
     if not wlan.isconnected():
 
         print("WiFi lost")
+
+        connect_wifi()
+
+        return
+
+    if not has_valid_ip(wlan):
+
+        print("WiFi invalid IP")
 
         connect_wifi()
 
