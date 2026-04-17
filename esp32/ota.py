@@ -5,6 +5,8 @@ import os
 import time
 import socket
 
+import config
+
 from config import (
     OTA_SERVER,
     OTA_PORT,
@@ -36,13 +38,49 @@ EXPECTED_HASH = None
 
 
 # =========================
+# DNS RESOLVE
+# =========================
+
+def resolve_server():
+
+    for _ in range(config.DNS_RESOLVE_RETRY):
+
+        try:
+
+            addr = socket.getaddrinfo(
+                OTA_SERVER,
+                OTA_PORT
+            )[0][-1][0]
+
+            print("Resolved OTA server:", addr)
+
+            return addr
+
+        except Exception as e:
+
+            print("DNS resolve failed:", e)
+
+            if config.SERVER_FALLBACK_IP:
+
+                print("Using fallback IP")
+
+                return config.SERVER_FALLBACK_IP
+
+            time.sleep(config.DNS_RESOLVE_DELAY)
+
+    raise RuntimeError("OTA server resolve failed")
+
+
+# =========================
 # URL
 # =========================
 
 def get_url(path):
 
+    server_ip = resolve_server()
+
     return "http://{}:{}/{}".format(
-        OTA_SERVER,
+        server_ip,
         OTA_PORT,
         path
     )
@@ -98,15 +136,14 @@ def check_update():
 
             print("Checking update...")
 
-            socket.setdefaulttimeout(
-                REQUEST_TIMEOUT
-            )
-
             url = get_url("version")
 
             print("URL:", url)
 
-            response = urequests.get(url)
+            response = urequests.get(
+                url,
+                timeout=REQUEST_TIMEOUT
+            )
 
             data = response.json()
 
@@ -165,10 +202,6 @@ def download_firmware():
 
         try:
 
-            socket.setdefaulttimeout(
-                REQUEST_TIMEOUT
-            )
-
             if LED_AVAILABLE:
 
                 led.set_state(
@@ -181,9 +214,14 @@ def download_firmware():
 
             print("URL:", url)
 
-            response = urequests.get(url)
+            response = urequests.get(
+                url,
+                timeout=REQUEST_TIMEOUT
+            )
 
             size = 0
+
+            start_time = time.time()
 
             with open(
                 TEMP_FILE,
@@ -203,13 +241,19 @@ def download_firmware():
 
                     size += len(chunk)
 
+                    # timeout protection
+
+                    if time.time() - start_time > REQUEST_TIMEOUT:
+
+                        raise RuntimeError(
+                            "Download timeout"
+                        )
+
             response.close()
 
             if size == 0:
 
-                print(
-                    "Download empty"
-                )
+                print("Download empty")
 
                 try:
                     os.remove(TEMP_FILE)
@@ -255,11 +299,7 @@ def download_firmware():
                     )
 
                     try:
-
-                        os.remove(
-                            TEMP_FILE
-                        )
-
+                        os.remove(TEMP_FILE)
                     except:
                         pass
 
@@ -301,10 +341,6 @@ def apply_update():
             )
 
             return False
-
-        # =========================
-        # FINAL HASH CHECK
-        # =========================
 
         if EXPECTED_HASH:
 
