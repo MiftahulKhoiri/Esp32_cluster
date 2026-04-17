@@ -350,23 +350,12 @@ def shutdown_handler(signum, frame):
 
     try:
 
-        print_event(
-            "Stopping MQTT loop..."
-        )
-
         client.loop_stop()
-
     except:
         pass
 
     try:
-
-        print_event(
-            "Disconnecting MQTT..."
-        )
-
         client.disconnect()
-
     except:
         pass
 
@@ -395,16 +384,10 @@ try:
             shutdown_handler
         )
 
-    else:
-
-        print_event(
-            "Signal handler skipped (not main thread)"
-        )
-
 except Exception:
 
     print_event(
-        "Signal handler registration failed"
+        "Signal handler skipped"
     )
 
 
@@ -458,13 +441,9 @@ def on_message(client, userdata, msg):
         "cluster/status"
     ):
 
-        node = payload.get(
-            "node"
-        )
+        node = payload.get("node")
 
-        status = payload.get(
-            "status"
-        )
+        status = payload.get("status")
 
         with state_lock:
 
@@ -580,30 +559,6 @@ add_task(
 
 
 # =========================================================
-# START WATCHDOG THREAD
-# =========================================================
-
-watchdog_thread = threading.Thread(
-    target=watchdog_monitor,
-    daemon=True
-)
-
-watchdog_thread.start()
-
-
-# =========================================================
-# START COORDINATOR LOOP THREAD
-# =========================================================
-
-coordinator_thread = threading.Thread(
-    target=lambda: coordinator_loop(),
-    daemon=True
-)
-
-coordinator_thread.start()
-
-
-# =========================================================
 # MAIN LOOP
 # =========================================================
 
@@ -636,3 +591,22 @@ def coordinator_loop():
             )
 
             time.sleep(2)
+
+
+# =========================================================
+# START THREADS
+# =========================================================
+
+watchdog_thread = threading.Thread(
+    target=watchdog_monitor,
+    daemon=True
+)
+
+watchdog_thread.start()
+
+coordinator_thread = threading.Thread(
+    target=coordinator_loop,
+    daemon=True
+)
+
+coordinator_thread.start()
