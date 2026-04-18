@@ -20,12 +20,16 @@ Tanpa perlu coding tambahan.
 Arsitektur Sistem
 
 ESP32 Node
+
      │
      ▼
 MQTT Broker (Mosquitto)
+
      │
      ▼
 Cluster Server
+
+
      │
  ┌───────────────┬───────────────┐
  │               │               │
