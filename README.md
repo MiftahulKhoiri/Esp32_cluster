@@ -1,6 +1,5 @@
 ## ESP32 CLUSTER SERVER — README
-
-Panduan lengkap menjalankan Server Cluster ESP32.
+# Panduan lengkap menjalankan Server Cluster ESP32.
 
 Dokumen ini disusun untuk penggunaan nyata sehari-hari.
 
@@ -56,8 +55,11 @@ sudo apt update
 sudo apt upgrade
 
 sudo apt install python3
+
 sudo apt install python3-pip
+
 sudo apt install mosquitto
+
 sudo apt install avahi-daemon
 
 ---
