@@ -1,5 +1,5 @@
-## ESP32 CLUSTER SERVER — README
-# Panduan lengkap menjalankan Server Cluster ESP32.
+# ESP32 CLUSTER SERVER — README
+### Panduan lengkap menjalankan Server Cluster ESP32.
 
 Dokumen ini disusun untuk penggunaan nyata sehari-hari.
 
