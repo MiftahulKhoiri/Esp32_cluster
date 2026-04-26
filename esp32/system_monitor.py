@@ -25,7 +25,7 @@ MEMORY_CRITICAL_KB = 20
 CPU_SAMPLE_TIME = 0.2
 
 
-# Waktu terakhir laporan sistem dikirim (epoch)
+# Waktu terakhir laporan sistem dikirim (ms ticks)
 last_report = 0
 
 
@@ -78,7 +78,6 @@ def get_cpu_usage():
 
     elapsed = time.ticks_diff(time.ticks_ms(), start)
 
-    # Estimasi kasar persentase: busier loop = lebih banyak waktu CPU idle
     percent = int((busy / (elapsed * 10)) * 100)
     if percent > 100:
         percent = 100
@@ -94,13 +93,13 @@ def get_flash_usage():
     """
     Membaca penggunaan penyimpanan flash (filesystem) menggunakan os.statvfs.
     Menghitung total, bebas, dan persentase penggunaan dalam KB.
-    Mengembalikan dictionary, atau nilai nol jika terjadi error (misal tidak ada filesystem).
+    Mengembalikan dictionary, atau nilai nol jika terjadi error.
     """
     try:
         stat = os.statvfs("/")
-        block_size = stat[0]          # Ukuran blok
-        total_blocks = stat[2]        # Total blok
-        free_blocks = stat[3]         # Blok bebas
+        block_size = stat[0]
+        total_blocks = stat[2]
+        free_blocks = stat[3]
 
         total = block_size * total_blocks
         free = block_size * free_blocks
@@ -116,7 +115,6 @@ def get_flash_usage():
             "percent": percent
         }
     except Exception:
-        # Jika statvfs gagal (misal tidak didukung), kembalikan nol
         return {
             "total_kb": 0,
             "free_kb": 0,
@@ -146,8 +144,7 @@ def get_temperature():
 
 def get_system_status():
     """
-    Mengumpulkan semua metrik sistem menjadi satu dictionary:
-    memori, CPU, penyimpanan flash, dan suhu.
+    Mengumpulkan semua metrik sistem menjadi satu dictionary.
     """
     mem = get_memory_info()
     cpu = get_cpu_usage()
@@ -177,15 +174,12 @@ def send_system_status(client):
     """
     Mengirim laporan status sistem ke broker MQTT pada topik
     'cluster/progress/<NODE_ID>' jika interval MONITOR_INTERVAL telah terlewati.
-    Juga mencetak status ke konsol.
-    Memberikan peringatan jika memori bebas rendah, dan me-reset node jika
-    memori bebas di bawah MEMORY_CRITICAL_KB.
     """
     global last_report
 
-    now = time.time()
-    # Lewati jika belum waktunya mengirim
-    if now - last_report < MONITOR_INTERVAL:
+    now = time.ticks_ms()
+
+    if time.ticks_diff(now, last_report) < MONITOR_INTERVAL * 1000:
         return
 
     last_report = now
@@ -193,11 +187,10 @@ def send_system_status(client):
     try:
         status = get_system_status()
 
-        # Susun payload JSON untuk MQTT
         payload = {
             "node": NODE_ID,
             "stage": "system",
-            "progress": status["memory_percent"],      # Gunakan persen memori sebagai progress
+            "progress": status["memory_percent"],
 
             "memory_free_kb": status["memory_free_kb"],
             "memory_used_kb": status["memory_used_kb"],
@@ -207,7 +200,6 @@ def send_system_status(client):
             "temperature": status["temperature"]
         }
 
-        # Hanya publish jika client MQTT tersedia
         if client is not None:
             client.publish(
                 "cluster/progress/" + NODE_ID,
@@ -216,11 +208,9 @@ def send_system_status(client):
 
         print("SYSTEM:", payload)
 
-        # Peringatan memori rendah
         if status["memory_free_kb"] < MEMORY_WARNING_KB:
             print("WARNING: Low memory")
 
-        # Jika memori kritis, lakukan reset untuk mencegah crash lebih parah
         if status["memory_free_kb"] < MEMORY_CRITICAL_KB:
             print("CRITICAL: Memory exhausted")
             machine.reset()
