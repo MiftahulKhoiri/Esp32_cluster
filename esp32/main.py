@@ -33,7 +33,7 @@ import ota
 try:
     import led
     LED_AVAILABLE = True
-except:
+except Exception:
     LED_AVAILABLE = False
 
 
@@ -143,7 +143,7 @@ def send_task_status(task_id, status):
             "node": NODE_ID,
             "task_id": task_id,
             "status": status,
-            "timestamp": time.time()
+            "timestamp": time.ticks_ms()
         })
         topic = "cluster/task_status/" + NODE_ID
         safe_publish(topic, payload)
@@ -280,8 +280,9 @@ def periodic_gc():
     """
     global last_gc
 
-    now = time.time()
-    if now - last_gc < GC_INTERVAL:
+    now = time.ticks_ms()
+
+    if time.ticks_diff(now, last_gc) < GC_INTERVAL * 1000:
         return        # Belum waktunya GC
 
     last_gc = now
@@ -318,7 +319,7 @@ def connect_mqtt():
             if client:
                 try:
                     client.disconnect()
-                except:
+                except Exception:
                     pass
                 client = None
 
@@ -384,8 +385,9 @@ def send_heartbeat():
     """
     global last_heartbeat
 
-    now = time.time()
-    if now - last_heartbeat < HEARTBEAT_INTERVAL:
+    now = time.ticks_ms()
+
+    if time.ticks_diff(now, last_heartbeat) < HEARTBEAT_INTERVAL * 1000:
         return
 
     last_heartbeat = now
@@ -420,7 +422,7 @@ def main():
     try:
         cause = machine.reset_cause()
         print("Reset cause:", cause)
-    except:
+    except Exception:
         pass
 
     if LED_AVAILABLE:
@@ -442,20 +444,21 @@ def main():
     # Loop utama
     while True:
         try:
-            ensure_connection()          # Pastikan WiFi tetap terhubung
-            client.ping()                # Jaga keep-alive MQTT
-            client.check_msg()           # Proses pesan masuk (callback on_message)
+            ensure_connection()
+            client.ping()
+            client.check_msg()
 
-            send_heartbeat()             # Kirim heartbeat berkala
-            send_system_status(client)   # Kirim status sistem ke cluster
-            periodic_gc()                # Pembersihan memori periodik
+            send_heartbeat()
+            send_system_status(client)
+            periodic_gc()
 
         except Exception as e:
             print("MQTT error:", e)
             time.sleep(2)
-            connect_mqtt()               # Jika error, coba sambung ulang
+            connect_mqtt()
 
-        time.sleep(0.1)                  # Jeda kecil agar tidak membebani CPU
+        time.sleep(0.1)
+
 
 # Jalankan program utama
 main()
