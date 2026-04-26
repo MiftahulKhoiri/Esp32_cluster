@@ -1,0 +1,1 @@
+upload semua file ini ke esp32 MicroPython 
