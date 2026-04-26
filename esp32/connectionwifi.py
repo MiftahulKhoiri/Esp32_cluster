@@ -11,7 +11,7 @@ from config import WIFI_SSID, WIFI_PASSWORD
 try:
     import led
     LED_AVAILABLE = True
-except:
+except Exception:
     LED_AVAILABLE = False
 
 
@@ -65,7 +65,7 @@ def reset_wifi():
 
     try:
         wlan.disconnect()                 # Putuskan koneksi bila ada
-    except:
+    except Exception:
         pass
 
     wlan.active(False)                    # Matikan interface
@@ -97,7 +97,7 @@ def has_valid_ip(wlan):
             return False
 
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -135,7 +135,7 @@ def connect_wifi(timeout=20, retry=True):
             time.sleep(RETRY_DELAY)
             continue
 
-        start = time.time()
+        start = time.ticks_ms()
 
         # Tunggu hingga terhubung atau timeout
         while True:
@@ -156,7 +156,7 @@ def connect_wifi(timeout=20, retry=True):
                 gc.collect()              # Bersihkan memori setelah berhasil
                 return True
 
-            if time.time() - start > timeout:
+            if time.ticks_diff(time.ticks_ms(), start) > timeout * 1000:
                 print("WiFi timeout")
                 break
 
