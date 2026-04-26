@@ -86,7 +86,7 @@ def stop():
     """
     try:
         _timer.deinit()          # Hentikan timer
-    except:
+    except Exception:
         pass
 
     if _led:
@@ -119,7 +119,7 @@ def set_state(new_state):
     # Hentikan timer kedipan sebelumnya
     try:
         _timer.deinit()
-    except:
+    except Exception:
         pass
 
     # Terapkan pola visual berdasarkan status baru
