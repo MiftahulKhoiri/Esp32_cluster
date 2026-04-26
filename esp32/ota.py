@@ -19,7 +19,7 @@ from config import (
 try:
     import led
     LED_AVAILABLE = True
-except:
+except Exception:
     LED_AVAILABLE = False
 
 
@@ -106,7 +106,7 @@ def calculate_sha256(filepath):
         sha = hashlib.sha256()
         with open(filepath, "rb") as f:
             while True:
-                chunk = f.read(1024)       # Baca per 1 KB
+                chunk = f.read(1024)
                 if not chunk:
                     break
                 sha.update(chunk)
@@ -123,17 +123,16 @@ def calculate_sha256(filepath):
 def check_update():
     """
     Memeriksa ketersediaan pembaruan firmware dengan membandingkan versi lokal
-    dan versi server. Jika versi server lebih baru, simpan hash yang diberikan
-    server (untuk verifikasi) dan kembalikan True. Jika tidak ada pembaruan,
-    kembalikan False.
+    dan versi server.
     """
     global EXPECTED_HASH
 
     for attempt in range(3):
         try:
             print("Checking update...")
-            url = get_url("version")         # Endpoint versi
+            url = get_url("version")
             print("URL:", url)
+
             response = urequests.get(url, timeout=REQUEST_TIMEOUT)
             data = response.json()
             response.close()
@@ -150,7 +149,7 @@ def check_update():
 
             if server_version != VERSION:
                 print("Update available")
-                EXPECTED_HASH = server_hash   # Simpan hash untuk verifikasi nanti
+                EXPECTED_HASH = server_hash
                 return True
 
             print("No update")
@@ -169,36 +168,37 @@ def check_update():
 
 def download_firmware():
     """
-    Mengunduh firmware dari server OTA dan menyimpannya ke file sementara (TEMP_FILE).
-    Melakukan verifikasi hash setelah unduhan selesai jika EXPECTED_HASH ada.
-    Mengembalikan True jika berhasil dan hash cocok/sesuai, False jika gagal.
+    Mengunduh firmware dari server OTA dan menyimpannya ke file sementara.
     """
     global EXPECTED_HASH
 
     for attempt in range(3):
         try:
             if LED_AVAILABLE:
-                led.set_state(led.STATE_OTA)  # Indikator mode OTA
+                led.set_state(led.STATE_OTA)
 
             print("Downloading firmware")
-            url = get_url("firmware")          # Endpoint file firmware
+            url = get_url("firmware")
             print("URL:", url)
+
             response = urequests.get(url, timeout=REQUEST_TIMEOUT)
 
             size = 0
-            start_time = time.time()
+            start_time = time.ticks_ms()
 
-            # Tulis ke file sementara secara bertahap
             with open(TEMP_FILE, "wb") as f:
                 while True:
-                    chunk = response.raw.read(512)  # Baca 512 byte per blok
+                    chunk = response.raw.read(512)
                     if not chunk:
                         break
+
                     f.write(chunk)
                     size += len(chunk)
 
-                    # Perlindungan timeout download
-                    if time.time() - start_time > REQUEST_TIMEOUT:
+                    if time.ticks_diff(
+                        time.ticks_ms(),
+                        start_time
+                    ) > REQUEST_TIMEOUT * 1000:
                         raise RuntimeError("Download timeout")
 
             response.close()
@@ -207,25 +207,28 @@ def download_firmware():
                 print("Download empty")
                 try:
                     os.remove(TEMP_FILE)
-                except:
+                except Exception:
                     pass
                 return False
 
             print("Downloaded:", size, "bytes")
 
-            # Verifikasi hash jika tersedia
             if EXPECTED_HASH:
                 print("Verifying firmware hash")
+
                 file_hash = calculate_sha256(TEMP_FILE)
+
                 print("Expected:", EXPECTED_HASH)
                 print("Actual  :", file_hash)
 
                 if file_hash != EXPECTED_HASH:
                     print("Hash mismatch")
+
                     try:
                         os.remove(TEMP_FILE)
-                    except:
+                    except Exception:
                         pass
+
                     return False
 
                 print("Hash OK")
@@ -234,10 +237,12 @@ def download_firmware():
 
         except Exception as e:
             print("Download failed:", e)
+
             try:
                 os.remove(TEMP_FILE)
-            except:
+            except Exception:
                 pass
+
             time.sleep(2)
 
     return False
@@ -249,41 +254,42 @@ def download_firmware():
 
 def apply_update():
     """
-    Menerapkan firmware yang sudah diunduh:
-    - Periksa integritas sekali lagi jika ada hash.
-    - Hapus main.py lama jika ada.
-    - Ganti nama file sementara menjadi main.py.
-    Mengembalikan True jika berhasil, False jika gagal.
+    Menerapkan firmware yang sudah diunduh.
     """
     try:
         if TEMP_FILE not in os.listdir():
             print("Firmware file missing")
             return False
 
-        # Pemeriksaan integritas terakhir sebelum menimpa
         if EXPECTED_HASH:
             print("Final integrity check")
+
             file_hash = calculate_sha256(TEMP_FILE)
+
             if file_hash != EXPECTED_HASH:
                 print("Integrity check failed")
+
                 os.remove(TEMP_FILE)
+
                 return False
 
-        # Hapus main.py lama
         if TARGET_FILE in os.listdir():
             os.remove(TARGET_FILE)
 
-        # Ganti nama file sementara menjadi main.py
         os.rename(TEMP_FILE, TARGET_FILE)
+
         print("Firmware replaced")
+
         return True
 
     except Exception as e:
         print("Apply update failed:", e)
+
         try:
             os.remove(TEMP_FILE)
-        except:
+        except Exception:
             pass
+
         return False
 
 
@@ -293,12 +299,7 @@ def apply_update():
 
 def perform_update():
     """
-    Fungsi utama untuk melakukan seluruh proses OTA update:
-    1. Cek ketersediaan update.
-    2. Unduh firmware baru.
-    3. Terapkan update.
-    4. Restart node dengan machine.reset().
-    Maksimal 3 percobaan untuk setiap tahap sebelum gagal total.
+    Fungsi utama untuk melakukan seluruh proses OTA update.
     """
     attempts = 0
     MAX_ATTEMPTS = 3
@@ -307,30 +308,32 @@ def perform_update():
         try:
             print("OTA attempt:", attempts + 1)
 
-            # Cek apakah ada versi baru
             if not check_update():
-                return False   # Tidak ada update, keluar
+                return False
 
-            # Unduh firmware
             if not download_firmware():
                 attempts += 1
                 continue
 
-            # Terapkan firmware
             if not apply_update():
                 attempts += 1
                 continue
 
-            # Jika berhasil, restart perangkat
             print("Restarting device")
+
             time.sleep(2)
-            machine.reset()    # Node akan boot ulang dengan firmware baru
-            return True        # (tidak akan tercapai karena reset, tapi untuk kelengkapan)
+
+            machine.reset()
+
+            return True
 
         except Exception as e:
             print("OTA error:", e)
+
             attempts += 1
+
             time.sleep(2)
 
     print("OTA failed after retries")
+
     return False
