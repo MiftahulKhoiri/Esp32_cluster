@@ -29,6 +29,13 @@ from node_monitor import (
     get_node_count
 )
 
+# Import modul LED
+try:
+    import led_indicator as led
+    LED_AVAILABLE = True
+except:
+    LED_AVAILABLE = False
+
 
 # =========================
 # GLOBAL
@@ -108,9 +115,20 @@ def update_display():
                 node_count
             )
 
+            # LED activity jika ada node
+            if LED_AVAILABLE:
+
+                if node_count > 0:
+                    led.set_state("activity")
+                else:
+                    led.set_state("running")
+
     except Exception as e:
 
         print("Display update error:", e)
+
+        if LED_AVAILABLE:
+            led.set_state("error")
 
 
 # =========================
@@ -128,9 +146,15 @@ def main():
 
     try:
 
+        if LED_AVAILABLE:
+            led.set_state("boot")
+
         show_boot_screen()
 
         time.sleep(BOOT_DELAY)
+
+        if LED_AVAILABLE:
+            led.set_state("ap")
 
         start_access_point()
 
@@ -140,11 +164,17 @@ def main():
 
         _cycle_start_time = time.ticks_ms()
 
+        if LED_AVAILABLE:
+            led.set_state("running")
+
         print("System ready")
 
     except Exception as e:
 
         print("Boot error:", e)
+
+        if LED_AVAILABLE:
+            led.set_state("error")
 
     while True:
 
@@ -166,6 +196,9 @@ def main():
         except Exception as e:
 
             print("Main loop error:", e)
+
+            if LED_AVAILABLE:
+                led.set_state("error")
 
         time.sleep(0.1)
 
