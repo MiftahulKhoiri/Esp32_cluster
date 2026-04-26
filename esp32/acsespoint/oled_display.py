@@ -1,5 +1,6 @@
 # Import modul hardware dan display
 from machine import Pin, I2C
+import machine
 import time
 
 # Library driver OLED SSD1306
@@ -12,7 +13,9 @@ from config import (
     OLED_WIDTH,
     OLED_HEIGHT,
     OLED_FREQ,
-    DEVICE_NAME
+    DEVICE_NAME,
+    RTC_DEFAULT_TIME,
+    TIMEZONE_OFFSET
 )
 
 
@@ -20,11 +23,31 @@ from config import (
 # GLOBAL
 # =========================
 
-# Objek I2C
 _i2c = None
-
-# Objek display OLED
 _display = None
+
+
+# =========================
+# INIT RTC
+# =========================
+
+def init_rtc():
+    """
+    Menginisialisasi RTC dengan waktu default jika belum pernah diset.
+    """
+
+    try:
+        rtc = machine.RTC()
+
+        dt = rtc.datetime()
+
+        # Jika tahun masih default (belum pernah diset)
+        if dt[0] < 2024:
+            rtc.datetime(RTC_DEFAULT_TIME)
+            print("RTC initialized")
+
+    except Exception as e:
+        print("RTC init error:", e)
 
 
 # =========================
@@ -34,8 +57,6 @@ _display = None
 def init_display():
     """
     Menginisialisasi layar OLED SSD1306 menggunakan interface I2C.
-    Akan mencoba alamat 0x3C terlebih dahulu, jika gagal mencoba 0x3D.
-    Mengembalikan objek display jika berhasil, atau None jika gagal.
     """
 
     global _i2c
@@ -44,7 +65,8 @@ def init_display():
     try:
         print("Initializing OLED display")
 
-        # Buat interface I2C
+        init_rtc()
+
         _i2c = I2C(
             0,
             scl=Pin(OLED_SCL),
@@ -54,7 +76,6 @@ def init_display():
 
         time.sleep(1)
 
-        # Scan alamat I2C
         devices = _i2c.scan()
 
         if not devices:
@@ -63,9 +84,6 @@ def init_display():
 
         print("I2C devices:", devices)
 
-        # Coba alamat umum OLED
-        address = None
-
         if 0x3C in devices:
             address = 0x3C
         elif 0x3D in devices:
@@ -73,7 +91,6 @@ def init_display():
         else:
             address = devices[0]
 
-        # Inisialisasi display
         _display = ssd1306.SSD1306_I2C(
             OLED_WIDTH,
             OLED_HEIGHT,
@@ -97,10 +114,6 @@ def init_display():
 # =========================
 
 def get_display():
-    """
-    Mengembalikan objek display.
-    Jika belum diinisialisasi, akan mencoba init otomatis.
-    """
 
     global _display
 
@@ -115,9 +128,6 @@ def get_display():
 # =========================
 
 def clear():
-    """
-    Membersihkan layar OLED.
-    """
 
     try:
         disp = get_display()
@@ -135,16 +145,12 @@ def clear():
 # =========================
 
 def draw_text(text, x, y):
-    """
-    Menampilkan teks pada posisi (x, y).
-    Tidak langsung refresh layar.
-    """
 
     try:
         disp = get_display()
 
         if disp:
-            disp.text(text, x, y)
+            disp.text(str(text), x, y)
 
     except Exception as e:
         print("OLED text error:", e)
@@ -155,9 +161,6 @@ def draw_text(text, x, y):
 # =========================
 
 def update():
-    """
-    Menampilkan buffer ke layar OLED.
-    """
 
     try:
         disp = get_display()
@@ -174,9 +177,6 @@ def update():
 # =========================
 
 def show_boot_screen():
-    """
-    Menampilkan layar awal saat device boot.
-    """
 
     try:
         clear()
@@ -195,13 +195,6 @@ def show_boot_screen():
 # =========================
 
 def show_status(ssid, password, ip, node_count):
-    """
-    Menampilkan status utama pada layar OLED:
-    - SSID
-    - Password
-    - IP address
-    - Jumlah node terhubung
-    """
 
     try:
         clear()
@@ -224,3 +217,117 @@ def show_status(ssid, password, ip, node_count):
 
     except Exception as e:
         print("Display status error:", e)
+
+
+# =========================
+# GET CURRENT TIME
+# =========================
+
+def get_current_time():
+    """
+    Mengambil waktu RTC dan menambahkan timezone offset.
+    """
+
+    try:
+        rtc = machine.RTC()
+
+        dt = rtc.datetime()
+
+        year = dt[0]
+        month = dt[1]
+        day = dt[2]
+        weekday = dt[3]
+
+        hour = dt[4] + TIMEZONE_OFFSET
+        minute = dt[5]
+        second = dt[6]
+
+        if hour >= 24:
+            hour -= 24
+
+        return (
+            year,
+            month,
+            day,
+            weekday,
+            hour,
+            minute,
+            second
+        )
+
+    except Exception:
+        return (
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        )
+
+
+# =========================
+# SHOW CLOCK
+# =========================
+
+def show_clock():
+    """
+    Menampilkan waktu realtime:
+    HH:MM:SS
+    Hari
+    Tanggal/Bulan/Tahun
+    """
+
+    try:
+        clear()
+
+        (
+            year,
+            month,
+            day,
+            weekday,
+            hour,
+            minute,
+            second
+        ) = get_current_time()
+
+        days = [
+            "Mon",
+            "Tue",
+            "Wed",
+            "Thu",
+            "Fri",
+            "Sat",
+            "Sun"
+        ]
+
+        if weekday < len(days):
+            day_name = days[weekday]
+        else:
+            day_name = "Day"
+
+        time_str = "{:02d}:{:02d}:{:02d}".format(
+            hour,
+            minute,
+            second
+        )
+
+        date_str = "{:02d}/{:02d}/{:04d}".format(
+            day,
+            month,
+            year
+        )
+
+        draw_text("CLOCK", 0, 0)
+
+        draw_text(time_str, 0, 20)
+
+        draw_text(day_name, 0, 40)
+
+        draw_text(date_str, 0, 52)
+
+        update()
+
+    except Exception as e:
+        print("Clock display error:", e)
