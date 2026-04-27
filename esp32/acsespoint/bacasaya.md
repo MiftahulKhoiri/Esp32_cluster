@@ -1,0 +1,1 @@
+ini adalah semua script untuk membuat micropython menjadi akses point
