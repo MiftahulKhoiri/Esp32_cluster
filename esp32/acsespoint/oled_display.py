@@ -80,6 +80,28 @@ def ensure_screen(screen_name):
 
 
 # =========================
+# BOOT SCREEN
+# =========================
+
+def show_boot_screen():
+
+    try:
+
+        ensure_screen("boot")
+
+        clear_area(0, 0, 128, 64)
+
+        draw_text(DEVICE_NAME, 0, 0)
+
+        draw_text("Starting...", 0, 20)
+
+        update(True)
+
+    except Exception as e:
+
+        print("Boot screen error:", repr(e))
+
+# =========================
 # RTC
 # =========================
 
@@ -256,6 +278,100 @@ def update(force=False):
 
 
 # =========================
+# LOGO ANIMATION (FIX)
+# =========================
+
+def show_logo_animation():
+
+    try:
+
+        print("Show logo animation")
+
+        ensure_screen("logo")
+
+        disp = get_display()
+
+        icon = framebuf.FrameBuffer(
+            logo_bitmap,
+            16,
+            16,
+            framebuf.MONO_HLSB
+        )
+
+        for y in range(-16, 10):
+
+            clear()
+
+            disp.blit(icon, 56, y)
+
+            update(True)
+
+            time.sleep_ms(50)
+
+        title = DEVICE_NAME
+
+        for i in range(len(title) + 1):
+
+            clear_area(0, 36, 128, 12)
+
+            draw_text(title[:i], 8, 36)
+
+            update(True)
+
+            time.sleep_ms(45)
+
+        draw_text("AP CONTROLLER", 12, 50)
+
+        update(True)
+
+        time.sleep(1.5)
+
+    except Exception as e:
+
+        print("Logo animation error:", repr(e))
+
+
+# =========================
+# TIME (FIX)
+# =========================
+
+def get_current_time():
+
+    try:
+
+        rtc = machine.RTC()
+
+        dt = rtc.datetime()
+
+        year = dt[0]
+        month = dt[1]
+        day = dt[2]
+        weekday = dt[3]
+
+        hour = dt[4] + TIMEZONE_OFFSET
+        minute = dt[5]
+        second = dt[6]
+
+        if hour >= 24:
+
+            hour -= 24
+
+        return (
+            year,
+            month,
+            day,
+            weekday,
+            hour,
+            minute,
+            second
+        )
+
+    except:
+
+        return (0,0,0,0,0,0,0)
+
+
+# =========================
 # UPTIME
 # =========================
 
@@ -312,7 +428,7 @@ def get_node_status(count):
 
 
 # =========================
-# STATUS INFO (10 detik)
+# STATUS INFO
 # =========================
 
 def show_status_info(ssid, ip):
@@ -339,7 +455,7 @@ def show_status_info(ssid, ip):
 
 
 # =========================
-# STATUS HEALTH (40 detik)
+# STATUS HEALTH
 # =========================
 
 def show_status_health(node_count):
