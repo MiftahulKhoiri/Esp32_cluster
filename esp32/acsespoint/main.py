@@ -8,17 +8,21 @@ import gc
 from machine import WDT
 
 from config import (
+
     SSID,
     PASSWORD,
 
-    STATUS_DISPLAY_DURATION,
+    STATUS_INFO_DURATION,
+    STATUS_HEALTH_DURATION,
     CLOCK_DISPLAY_DURATION,
 
     CLOCK_REFRESH_INTERVAL,
     NODE_REFRESH_INTERVAL,
     DISPLAY_LOOP_DELAY,
 
+    WATCHDOG_TIMEOUT,
     BOOT_DELAY
+
 )
 
 from ap_wifi import (
@@ -27,11 +31,15 @@ from ap_wifi import (
 )
 
 from oled_display import (
+
     init_display,
     show_logo_animation,
     show_boot_screen,
-    show_status,
+
+    show_status_info,
+    show_status_health,
     show_clock
+
 )
 
 from node_monitor import (
@@ -46,20 +54,20 @@ except:
 
 
 # =========================
-# WATCHDOG CONFIG
+# WATCHDOG
 # =========================
 
-# 8000 ms = 8 detik
-wdt = WDT(timeout=8000)
+wdt = WDT(timeout=WATCHDOG_TIMEOUT)
 
 
 # =========================
 # GLOBAL STATE
 # =========================
 
-_current_screen = "status"
+_current_screen = "status_info"
 
 _screen_start_time = 0
+
 _last_clock_update = 0
 _last_node_update = 0
 
@@ -67,7 +75,7 @@ _cached_node_count = 0
 
 
 # =========================
-# SCREEN SWITCH LOGIC
+# SCREEN SWITCH
 # =========================
 
 def switch_screen():
@@ -82,19 +90,39 @@ def switch_screen():
         _screen_start_time
     )
 
-    if _current_screen == "status":
+    # ----------------------
+    # INFO → HEALTH
+    # ----------------------
 
-        if elapsed >= STATUS_DISPLAY_DURATION * 1000:
+    if _current_screen == "status_info":
+
+        if elapsed >= STATUS_INFO_DURATION * 1000:
+
+            _current_screen = "status_health"
+
+            _screen_start_time = now
+
+    # ----------------------
+    # HEALTH → CLOCK
+    # ----------------------
+
+    elif _current_screen == "status_health":
+
+        if elapsed >= STATUS_HEALTH_DURATION * 1000:
 
             _current_screen = "clock"
 
             _screen_start_time = now
 
+    # ----------------------
+    # CLOCK → INFO
+    # ----------------------
+
     elif _current_screen == "clock":
 
         if elapsed >= CLOCK_DISPLAY_DURATION * 1000:
 
-            _current_screen = "status"
+            _current_screen = "status_info"
 
             _screen_start_time = now
 
@@ -115,11 +143,24 @@ def update_display():
 
     try:
 
+        ip = get_ip()
+
         # =====================
-        # STATUS SCREEN
+        # STATUS INFO
         # =====================
 
-        if _current_screen == "status":
+        if _current_screen == "status_info":
+
+            show_status_info(
+                SSID,
+                ip
+            )
+
+        # =====================
+        # STATUS HEALTH
+        # =====================
+
+        elif _current_screen == "status_health":
 
             if time.ticks_diff(
                 now,
@@ -130,12 +171,7 @@ def update_display():
 
                 _last_node_update = now
 
-            ip = get_ip()
-
-            show_status(
-                SSID,
-                PASSWORD,
-                ip,
+            show_status_health(
                 _cached_node_count
             )
 
@@ -147,7 +183,7 @@ def update_display():
                     led.set_state("running")
 
         # =====================
-        # CLOCK SCREEN
+        # CLOCK
         # =====================
 
         elif _current_screen == "clock":
@@ -184,7 +220,6 @@ def main():
         if LED_AVAILABLE:
             led.set_state("boot")
 
-        # Feed watchdog saat boot
         wdt.feed()
 
         # INIT DISPLAY
@@ -208,7 +243,7 @@ def main():
         if LED_AVAILABLE:
             led.set_state("ap")
 
-        # START ACCESS POINT
+        # START AP
 
         start_access_point()
 
@@ -233,7 +268,7 @@ def main():
             led.set_state("error")
 
     # =========================
-    # MAIN LOOP
+    # LOOP
     # =========================
 
     while True:
@@ -242,7 +277,6 @@ def main():
 
             update_display()
 
-            # Feed watchdog setiap loop normal
             wdt.feed()
 
         except Exception as e:
