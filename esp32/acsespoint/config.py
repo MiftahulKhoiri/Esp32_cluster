@@ -102,3 +102,20 @@ BOOT_DELAY = 1
 NODE_WARNING_THRESHOLD = 8
 
 NODE_CRITICAL_THRESHOLD = 10
+
+# =========================
+# REFRESH INTERVAL CONFIG
+# =========================
+
+CLOCK_REFRESH_INTERVAL = 1
+
+NODE_REFRESH_INTERVAL = 2
+
+DISPLAY_LOOP_DELAY = 0.1
+
+
+# =========================
+# COMPATIBILITY (LEGACY)
+# =========================
+
+NODE_SCAN_INTERVAL = NODE_REFRESH_INTERVAL
