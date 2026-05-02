@@ -26,7 +26,7 @@ _display = None
 _last_update = 0
 _last_screen = None
 
-FRAME_INTERVAL = 800
+FRAME_INTERVAL = 250
 DEFAULT_CONTRAST = 130
 
 
