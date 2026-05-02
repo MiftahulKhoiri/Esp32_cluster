@@ -31,67 +31,32 @@ DEFAULT_CONTRAST = 130
 
 
 # =========================
-# LOGO BITMAP (16x16 VALID)
+# LOGO BITMAP (16x16)
 # =========================
 
 logo_bitmap = bytearray([
-
     0x18,0x3C,
     0x7E,0xFF,
     0xDB,0x7E,
     0x3C,0x18,
-
     0x18,0x3C,
     0x7E,0xDB,
     0xFF,0x7E,
     0x3C,0x18
-
 ])
 
 
 # =========================
-# SMART TRANSITION
+# SCREEN CONTROL
 # =========================
 
-def fade_transition():
-
-    try:
-
-        disp = get_display()
-
-        if not disp:
-            return
-
-        for c in range(
-            DEFAULT_CONTRAST,
-            DEFAULT_CONTRAST - 15,
-            -2
-        ):
-
-            disp.contrast(c)
-            time.sleep_ms(8)
-
-        for c in range(
-            DEFAULT_CONTRAST - 15,
-            DEFAULT_CONTRAST,
-            2
-        ):
-
-            disp.contrast(c)
-            time.sleep_ms(8)
-
-    except:
-
-        pass
-
-
-def smart_transition(screen_name):
+def ensure_screen(screen_name):
 
     global _last_screen
 
     if screen_name != _last_screen:
 
-        fade_transition()
+        clear()
 
         _last_screen = screen_name
 
@@ -152,15 +117,10 @@ def init_display():
             return None
 
         if 0x3C in devices:
-
             address = 0x3C
-
         elif 0x3D in devices:
-
             address = 0x3D
-
         else:
-
             address = devices[0]
 
         _display = ssd1306.SSD1306_I2C(
@@ -187,7 +147,7 @@ def init_display():
 
 
 # =========================
-# GET DISPLAY
+# BASIC DRAW
 # =========================
 
 def get_display():
@@ -201,10 +161,6 @@ def get_display():
     return _display
 
 
-# =========================
-# CLEAR
-# =========================
-
 def clear():
 
     try:
@@ -216,7 +172,6 @@ def clear():
             disp.fill(0)
 
     except:
-
         pass
 
 
@@ -231,13 +186,8 @@ def clear_area(x, y, w, h):
             disp.fill_rect(x, y, w, h, 0)
 
     except:
-
         pass
 
-
-# =========================
-# DRAW TEXT
-# =========================
 
 def draw_text(text, x, y):
 
@@ -250,12 +200,11 @@ def draw_text(text, x, y):
             disp.text(str(text), x, y)
 
     except:
-
         pass
 
 
 # =========================
-# UPDATE (FIXED)
+# UPDATE
 # =========================
 
 def update(force=False):
@@ -285,12 +234,11 @@ def update(force=False):
         _last_update = now
 
     except:
-
         pass
 
 
 # =========================
-# LOGO ANIMATION (FIXED)
+# LOGO ANIMATION
 # =========================
 
 def show_logo_animation():
@@ -299,12 +247,9 @@ def show_logo_animation():
 
         print("Show logo animation")
 
-        smart_transition("logo")
+        ensure_screen("logo")
 
         disp = get_display()
-
-        if not disp:
-            return
 
         icon = framebuf.FrameBuffer(
             logo_bitmap,
@@ -313,9 +258,7 @@ def show_logo_animation():
             framebuf.MONO_HLSB
         )
 
-        # ICON TURUN
-
-        for y in range(-16, 10, 2):
+        for y in range(-16, 10, 1):
 
             clear()
 
@@ -323,9 +266,7 @@ def show_logo_animation():
 
             update(True)
 
-            time.sleep_ms(40)
-
-        # TEXT MUNCUL
+            time.sleep_ms(60)
 
         title = DEVICE_NAME
 
@@ -337,13 +278,13 @@ def show_logo_animation():
 
             update(True)
 
-            time.sleep_ms(40)
+            time.sleep_ms(50)
 
         draw_text("AP CONTROLLER", 12, 50)
 
         update(True)
 
-        time.sleep(1)
+        time.sleep(2)
 
     except Exception as e:
 
@@ -358,9 +299,7 @@ def show_boot_screen():
 
     try:
 
-        smart_transition("boot")
-
-        clear()
+        ensure_screen("boot")
 
         draw_text(DEVICE_NAME, 0, 0)
 
@@ -369,7 +308,6 @@ def show_boot_screen():
         update(True)
 
     except:
-
         pass
 
 
@@ -381,9 +319,9 @@ def show_status(ssid, password, ip, node_count):
 
     try:
 
-        smart_transition("status")
+        ensure_screen("status")
 
-        clear()
+        clear_area(0, 0, 128, 64)
 
         draw_text("AP CONTROLLER", 0, 0)
 
@@ -401,22 +339,61 @@ def show_status(ssid, password, ip, node_count):
 
         update()
 
-    except:
+    except Exception as e:
 
-        pass
+        print("Status error:", repr(e))
 
 
 # =========================
-# CLOCK SCREEN
+# TIME
+# =========================
+
+def get_current_time():
+
+    try:
+
+        rtc = machine.RTC()
+
+        dt = rtc.datetime()
+
+        year = dt[0]
+        month = dt[1]
+        day = dt[2]
+        weekday = dt[3]
+
+        hour = dt[4] + TIMEZONE_OFFSET
+        minute = dt[5]
+        second = dt[6]
+
+        if hour >= 24:
+            hour -= 24
+
+        return (
+            year,
+            month,
+            day,
+            weekday,
+            hour,
+            minute,
+            second
+        )
+
+    except:
+
+        return (0,0,0,0,0,0,0)
+
+
+# =========================
+# CLOCK SCREEN (REAL-TIME)
 # =========================
 
 def show_clock():
 
     try:
 
-        smart_transition("clock")
+        ensure_screen("clock")
 
-        clear_area(0, 20, 128, 44)
+        clear_area(0, 0, 128, 64)
 
         (
             year,
@@ -429,21 +406,13 @@ def show_clock():
         ) = get_current_time()
 
         days = [
-            "Mon",
-            "Tue",
-            "Wed",
-            "Thu",
-            "Fri",
-            "Sat",
-            "Sun"
+            "Mon","Tue","Wed",
+            "Thu","Fri","Sat","Sun"
         ]
 
         if weekday < len(days):
-
             day_name = days[weekday]
-
         else:
-
             day_name = "Day"
 
         time_str = "{:02d}:{:02d}:{:02d}".format(
@@ -468,6 +437,6 @@ def show_clock():
 
         update()
 
-    except:
+    except Exception as e:
 
-        pass
+        print("Clock error:", repr(e))
