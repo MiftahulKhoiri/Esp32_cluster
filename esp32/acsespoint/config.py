@@ -169,3 +169,23 @@ MEMORY_WARNING_THRESHOLD = 20
 
 # Untuk node_monitor lama
 NODE_SCAN_INTERVAL = NODE_REFRESH_INTERVAL
+
+# =========================
+# INTERNET MONITOR CONFIG
+# =========================
+
+# Interval cek koneksi internet (detik)
+
+INTERNET_CHECK_INTERVAL = 10
+
+# Interval sync waktu NTP (detik)
+
+NTP_SYNC_INTERVAL = 21600
+# 21600 = 6 jam
+
+
+# =========================
+# NTP CONFIG
+# =========================
+
+NTP_SERVER = "pool.ntp.org"
