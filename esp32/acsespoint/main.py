@@ -10,7 +10,6 @@ from machine import WDT
 from config import (
 
     SSID,
-    PASSWORD,
 
     STATUS_INFO_DURATION,
     STATUS_HEALTH_DURATION,
@@ -90,10 +89,6 @@ def switch_screen():
         _screen_start_time
     )
 
-    # ----------------------
-    # INFO → HEALTH
-    # ----------------------
-
     if _current_screen == "status_info":
 
         if elapsed >= STATUS_INFO_DURATION * 1000:
@@ -102,10 +97,6 @@ def switch_screen():
 
             _screen_start_time = now
 
-    # ----------------------
-    # HEALTH → CLOCK
-    # ----------------------
-
     elif _current_screen == "status_health":
 
         if elapsed >= STATUS_HEALTH_DURATION * 1000:
@@ -113,10 +104,6 @@ def switch_screen():
             _current_screen = "clock"
 
             _screen_start_time = now
-
-    # ----------------------
-    # CLOCK → INFO
-    # ----------------------
 
     elif _current_screen == "clock":
 
@@ -143,17 +130,16 @@ def update_display():
 
     try:
 
-        ip = get_ip()
-
         # =====================
         # STATUS INFO
         # =====================
 
         if _current_screen == "status_info":
 
+            ip = get_ip()
+
             show_status_info(
                 SSID,
-                PASSWORD,
                 ip
             )
 
@@ -223,19 +209,13 @@ def main():
 
         wdt.feed()
 
-        # INIT DISPLAY
-
         init_display()
 
         wdt.feed()
 
-        # LOGO
-
         show_logo_animation()
 
         wdt.feed()
-
-        # BOOT SCREEN
 
         show_boot_screen()
 
@@ -244,15 +224,11 @@ def main():
         if LED_AVAILABLE:
             led.set_state("ap")
 
-        # START AP
-
         start_access_point()
 
         wdt.feed()
 
         gc.collect()
-
-        # INIT TIMER
 
         _screen_start_time = time.ticks_ms()
 
