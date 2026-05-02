@@ -10,6 +10,7 @@ from machine import WDT
 from config import (
 
     SSID,
+    PASSWORD,
 
     STATUS_INFO_DURATION,
     STATUS_HEALTH_DURATION,
@@ -94,7 +95,6 @@ def switch_screen():
         if elapsed >= STATUS_INFO_DURATION * 1000:
 
             _current_screen = "status_health"
-
             _screen_start_time = now
 
     elif _current_screen == "status_health":
@@ -102,7 +102,6 @@ def switch_screen():
         if elapsed >= STATUS_HEALTH_DURATION * 1000:
 
             _current_screen = "clock"
-
             _screen_start_time = now
 
     elif _current_screen == "clock":
@@ -110,7 +109,6 @@ def switch_screen():
         if elapsed >= CLOCK_DISPLAY_DURATION * 1000:
 
             _current_screen = "status_info"
-
             _screen_start_time = now
 
 
@@ -156,7 +154,6 @@ def update_display():
             ) >= NODE_REFRESH_INTERVAL * 1000:
 
                 _cached_node_count = get_node_count()
-
                 _last_node_update = now
 
             show_status_health(
@@ -182,7 +179,6 @@ def update_display():
             ) >= CLOCK_REFRESH_INTERVAL * 1000:
 
                 show_clock()
-
                 _last_clock_update = now
 
     except Exception as e:
