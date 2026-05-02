@@ -58,6 +58,7 @@ MQTT_MAX_PAYLOAD = 50000
 # =========================
 
 NODE_ID = "node1"
+# sesuaikan dengan jumlah node yang ad
 
 NODE_ROLE = "worker"
 
