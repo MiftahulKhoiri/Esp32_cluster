@@ -31,21 +31,20 @@ DEFAULT_CONTRAST = 130
 
 
 # =========================
-# LOGO BITMAP (32x32)
+# LOGO BITMAP (16x16 VALID)
 # =========================
 
 logo_bitmap = bytearray([
 
-    0x18,0x3C,0x7E,0xDB,
-    0xFF,0xDB,0x7E,0x3C,
-    0x18,0x00,0x18,0x3C,
+    0x18,0x3C,
+    0x7E,0xFF,
+    0xDB,0x7E,
+    0x3C,0x18,
 
-    0x7E,0xDB,0xFF,0xDB,
-    0x7E,0x3C,0x18,0x00,
-
-    0x18,0x3C,0x7E,0xDB,
-    0xFF,0xDB,0x7E,0x3C,
-    0x18,0x00,0x00,0x00
+    0x18,0x3C,
+    0x7E,0xDB,
+    0xFF,0x7E,
+    0x3C,0x18
 
 ])
 
@@ -63,12 +62,20 @@ def fade_transition():
         if not disp:
             return
 
-        for c in range(130, 115, -2):
+        for c in range(
+            DEFAULT_CONTRAST,
+            DEFAULT_CONTRAST - 15,
+            -2
+        ):
 
             disp.contrast(c)
             time.sleep_ms(8)
 
-        for c in range(115, 130, 2):
+        for c in range(
+            DEFAULT_CONTRAST - 15,
+            DEFAULT_CONTRAST,
+            2
+        ):
 
             disp.contrast(c)
             time.sleep_ms(8)
@@ -109,7 +116,7 @@ def init_rtc():
 
     except Exception as e:
 
-        print("RTC init error:", e)
+        print("RTC init error:", repr(e))
 
 
 # =========================
@@ -166,7 +173,7 @@ def init_display():
         _display.contrast(DEFAULT_CONTRAST)
 
         clear()
-        update()
+        update(True)
 
         print("OLED ready")
 
@@ -174,7 +181,7 @@ def init_display():
 
     except Exception as e:
 
-        print("OLED init error:", e)
+        print("OLED init error:", repr(e))
 
         return None
 
@@ -248,10 +255,10 @@ def draw_text(text, x, y):
 
 
 # =========================
-# SAFE UPDATE
+# UPDATE (FIXED)
 # =========================
 
-def update():
+def update(force=False):
 
     global _last_update
 
@@ -264,9 +271,14 @@ def update():
 
         now = time.ticks_ms()
 
-        if time.ticks_diff(now, _last_update) < FRAME_INTERVAL:
+        if not force:
 
-            return
+            if time.ticks_diff(
+                now,
+                _last_update
+            ) < FRAME_INTERVAL:
+
+                return
 
         disp.show()
 
@@ -278,12 +290,14 @@ def update():
 
 
 # =========================
-# LOGO ANIMATION
+# LOGO ANIMATION (FIXED)
 # =========================
 
 def show_logo_animation():
 
     try:
+
+        print("Show logo animation")
 
         smart_transition("logo")
 
@@ -294,24 +308,24 @@ def show_logo_animation():
 
         icon = framebuf.FrameBuffer(
             logo_bitmap,
-            32,
-            32,
+            16,
+            16,
             framebuf.MONO_HLSB
         )
 
-        # icon turun
+        # ICON TURUN
 
-        for y in range(-32, 8, 2):
+        for y in range(-16, 10, 2):
 
             clear()
 
-            disp.blit(icon, 48, y)
+            disp.blit(icon, 56, y)
 
-            update()
+            update(True)
 
-            time.sleep_ms(30)
+            time.sleep_ms(40)
 
-        # text muncul bertahap
+        # TEXT MUNCUL
 
         title = DEVICE_NAME
 
@@ -321,37 +335,19 @@ def show_logo_animation():
 
             draw_text(title[:i], 8, 36)
 
-            update()
+            update(True)
 
             time.sleep_ms(40)
 
         draw_text("AP CONTROLLER", 12, 50)
 
-        update()
-
-        time.sleep(0.5)
-
-        # pulse brightness
-
-        for _ in range(2):
-
-            for c in range(130, 115, -2):
-
-                disp.contrast(c)
-
-                time.sleep_ms(8)
-
-            for c in range(115, 130, 2):
-
-                disp.contrast(c)
-
-                time.sleep_ms(8)
+        update(True)
 
         time.sleep(1)
 
     except Exception as e:
 
-        print("Logo animation error:", e)
+        print("Logo animation error:", repr(e))
 
 
 # =========================
@@ -370,7 +366,7 @@ def show_boot_screen():
 
         draw_text("Starting...", 0, 16)
 
-        update()
+        update(True)
 
     except:
 
@@ -408,46 +404,6 @@ def show_status(ssid, password, ip, node_count):
     except:
 
         pass
-
-
-# =========================
-# TIME
-# =========================
-
-def get_current_time():
-
-    try:
-
-        rtc = machine.RTC()
-
-        dt = rtc.datetime()
-
-        year = dt[0]
-        month = dt[1]
-        day = dt[2]
-        weekday = dt[3]
-
-        hour = dt[4] + TIMEZONE_OFFSET
-        minute = dt[5]
-        second = dt[6]
-
-        if hour >= 24:
-
-            hour -= 24
-
-        return (
-            year,
-            month,
-            day,
-            weekday,
-            hour,
-            minute,
-            second
-        )
-
-    except:
-
-        return (0, 0, 0, 0, 0, 0, 0)
 
 
 # =========================
