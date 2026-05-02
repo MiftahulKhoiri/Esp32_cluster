@@ -43,7 +43,8 @@ from oled_display import (
 )
 
 from network_monitor import (
-    network_maintenance
+    network_maintenance,
+    sync_time
 )
 
 from node_monitor import (
@@ -240,14 +241,26 @@ def main():
             led.set_state("ap")
 
         # =====================
-        # START GATEWAY
+        # START NETWORK
         # =====================
 
         print("Starting network gateway")
 
-        start_gateway()
+        gateway_ok = start_gateway()
 
         wdt.feed()
+
+        # =====================
+        # INITIAL TIME SYNC
+        # =====================
+
+        try:
+
+            sync_time()
+
+        except Exception as e:
+
+            print("Initial NTP sync failed:", e)
 
         # =====================
         # MEMORY CLEAN
@@ -274,7 +287,7 @@ def main():
             led.set_state("error")
 
     # =========================
-    # LOOP
+    # MAIN LOOP
     # =========================
 
     while True:
@@ -283,8 +296,10 @@ def main():
 
             update_display()
 
+            # network watchdog
             network_maintenance()
 
+            # hardware watchdog
             wdt.feed()
 
         except Exception as e:
