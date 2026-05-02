@@ -31,18 +31,32 @@ DEFAULT_CONTRAST = 130
 
 
 # =========================
-# LOGO BITMAP (16x16)
+# LOGO BITMAP (VALID 16x16)
 # =========================
 
+# 16 x 16 pixel = 32 byte
 logo_bitmap = bytearray([
-    0x18,0x3C,
-    0x7E,0xFF,
-    0xDB,0x7E,
-    0x3C,0x18,
-    0x18,0x3C,
-    0x7E,0xDB,
-    0xFF,0x7E,
-    0x3C,0x18
+
+    0x18,0x18,
+    0x3C,0x3C,
+    0x7E,0x7E,
+    0xFF,0xFF,
+
+    0xFF,0xFF,
+    0x7E,0x7E,
+    0x3C,0x3C,
+    0x18,0x18,
+
+    0x18,0x18,
+    0x3C,0x3C,
+    0x7E,0x7E,
+    0xFF,0xFF,
+
+    0xFF,0xFF,
+    0x7E,0x7E,
+    0x3C,0x3C,
+    0x18,0x18
+
 ])
 
 
@@ -106,7 +120,7 @@ def init_display():
             freq=OLED_FREQ
         )
 
-        time.sleep(1)
+        time.sleep(0.5)
 
         devices = _i2c.scan()
 
@@ -258,7 +272,9 @@ def show_logo_animation():
             framebuf.MONO_HLSB
         )
 
-        for y in range(-16, 10, 1):
+        # gerakan turun (smooth)
+
+        for y in range(-16, 10):
 
             clear()
 
@@ -266,7 +282,7 @@ def show_logo_animation():
 
             update(True)
 
-            time.sleep_ms(60)
+            time.sleep_ms(50)
 
         title = DEVICE_NAME
 
@@ -278,13 +294,13 @@ def show_logo_animation():
 
             update(True)
 
-            time.sleep_ms(50)
+            time.sleep_ms(45)
 
         draw_text("AP CONTROLLER", 12, 50)
 
         update(True)
 
-        time.sleep(2)
+        time.sleep(1.5)
 
     except Exception as e:
 
@@ -384,7 +400,7 @@ def get_current_time():
 
 
 # =========================
-# CLOCK SCREEN (REAL-TIME)
+# CLOCK SCREEN
 # =========================
 
 def show_clock():
