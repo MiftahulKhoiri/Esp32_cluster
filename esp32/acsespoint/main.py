@@ -5,6 +5,8 @@
 import time
 import gc
 
+from machine import WDT
+
 from config import (
     SSID,
     PASSWORD,
@@ -41,6 +43,14 @@ try:
     LED_AVAILABLE = True
 except:
     LED_AVAILABLE = False
+
+
+# =========================
+# WATCHDOG CONFIG
+# =========================
+
+# 8000 ms = 8 detik
+wdt = WDT(timeout=8000)
 
 
 # =========================
@@ -111,8 +121,6 @@ def update_display():
 
         if _current_screen == "status":
 
-            # update node periodik
-
             if time.ticks_diff(
                 now,
                 _last_node_update
@@ -176,13 +184,20 @@ def main():
         if LED_AVAILABLE:
             led.set_state("boot")
 
+        # Feed watchdog saat boot
+        wdt.feed()
+
         # INIT DISPLAY
 
         init_display()
 
+        wdt.feed()
+
         # LOGO
 
         show_logo_animation()
+
+        wdt.feed()
 
         # BOOT SCREEN
 
@@ -193,9 +208,11 @@ def main():
         if LED_AVAILABLE:
             led.set_state("ap")
 
-        # START AP
+        # START ACCESS POINT
 
         start_access_point()
+
+        wdt.feed()
 
         gc.collect()
 
@@ -224,6 +241,9 @@ def main():
         try:
 
             update_display()
+
+            # Feed watchdog setiap loop normal
+            wdt.feed()
 
         except Exception as e:
 
