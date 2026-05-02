@@ -42,6 +42,10 @@ from oled_display import (
 
 )
 
+from network_monitor import (
+    network_maintenance
+)
+
 from node_monitor import (
     get_node_count
 )
@@ -278,6 +282,8 @@ def main():
         try:
 
             update_display()
+
+            network_maintenance()
 
             wdt.feed()
 
