@@ -26,7 +26,7 @@ from config import (
 )
 
 from ap_wifi import (
-    start_access_point,
+    start_gateway,
     get_ip
 )
 
@@ -154,6 +154,7 @@ def update_display():
             ) >= NODE_REFRESH_INTERVAL * 1000:
 
                 _cached_node_count = get_node_count()
+
                 _last_node_update = now
 
             show_status_health(
@@ -179,6 +180,7 @@ def update_display():
             ) >= CLOCK_REFRESH_INTERVAL * 1000:
 
                 show_clock()
+
                 _last_clock_update = now
 
     except Exception as e:
@@ -206,13 +208,25 @@ def main():
 
         wdt.feed()
 
+        # =====================
+        # INIT DISPLAY
+        # =====================
+
         init_display()
 
         wdt.feed()
 
+        # =====================
+        # LOGO
+        # =====================
+
         show_logo_animation()
 
         wdt.feed()
+
+        # =====================
+        # BOOT SCREEN
+        # =====================
 
         show_boot_screen()
 
@@ -221,11 +235,25 @@ def main():
         if LED_AVAILABLE:
             led.set_state("ap")
 
-        start_access_point()
+        # =====================
+        # START GATEWAY
+        # =====================
+
+        print("Starting network gateway")
+
+        start_gateway()
 
         wdt.feed()
 
+        # =====================
+        # MEMORY CLEAN
+        # =====================
+
         gc.collect()
+
+        # =====================
+        # INIT TIMER
+        # =====================
 
         _screen_start_time = time.ticks_ms()
 
