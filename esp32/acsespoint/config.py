@@ -6,7 +6,7 @@
 SSID = "CLUSTER-NODE"
 
 # Password WiFi (minimal 8 karakter)
-PASSWORD = "12345678"
+PASSWORD = "root123"
 
 # Channel WiFi (1 - 13)
 CHANNEL = 6
