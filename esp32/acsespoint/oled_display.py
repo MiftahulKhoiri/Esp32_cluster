@@ -1,6 +1,7 @@
 from machine import Pin, I2C
 import machine
 import time
+import gc
 
 import ssd1306
 import framebuf
@@ -13,7 +14,9 @@ from config import (
     OLED_FREQ,
     DEVICE_NAME,
     RTC_DEFAULT_TIME,
-    TIMEZONE_OFFSET
+    TIMEZONE_OFFSET,
+    NODE_WARNING_THRESHOLD,
+    NODE_CRITICAL_THRESHOLD
 )
 
 # =========================
@@ -29,12 +32,13 @@ _last_screen = None
 FRAME_INTERVAL = 250
 DEFAULT_CONTRAST = 130
 
+_boot_time = time.ticks_ms()
+
 
 # =========================
-# LOGO BITMAP (VALID 16x16)
+# LOGO BITMAP
 # =========================
 
-# 16 x 16 pixel = 32 byte
 logo_bitmap = bytearray([
 
     0x18,0x18,
@@ -252,155 +256,126 @@ def update(force=False):
 
 
 # =========================
-# LOGO ANIMATION
+# UPTIME
 # =========================
 
-def show_logo_animation():
+def get_uptime():
+
+    seconds = time.ticks_diff(
+        time.ticks_ms(),
+        _boot_time
+    ) // 1000
+
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+
+    return "{:02d}:{:02d}".format(
+        hours,
+        minutes
+    )
+
+
+# =========================
+# MEMORY
+# =========================
+
+def get_memory_percent():
+
+    free = gc.mem_free()
+
+    total = gc.mem_alloc() + free
+
+    percent = int(
+        (free / total) * 100
+    )
+
+    return percent
+
+
+# =========================
+# NODE STATUS
+# =========================
+
+def get_node_status(count):
+
+    if count >= NODE_CRITICAL_THRESHOLD:
+
+        return "FULL"
+
+    elif count >= NODE_WARNING_THRESHOLD:
+
+        return "WARN"
+
+    else:
+
+        return "OK"
+
+
+# =========================
+# STATUS INFO (10 detik)
+# =========================
+
+def show_status_info(ssid, ip):
 
     try:
 
-        print("Show logo animation")
-
-        ensure_screen("logo")
-
-        disp = get_display()
-
-        icon = framebuf.FrameBuffer(
-            logo_bitmap,
-            16,
-            16,
-            framebuf.MONO_HLSB
-        )
-
-        # gerakan turun (smooth)
-
-        for y in range(-16, 10):
-
-            clear()
-
-            disp.blit(icon, 56, y)
-
-            update(True)
-
-            time.sleep_ms(50)
-
-        title = DEVICE_NAME
-
-        for i in range(len(title) + 1):
-
-            clear_area(0, 36, 128, 12)
-
-            draw_text(title[:i], 8, 36)
-
-            update(True)
-
-            time.sleep_ms(45)
-
-        draw_text("AP CONTROLLER", 12, 50)
-
-        update(True)
-
-        time.sleep(1.5)
-
-    except Exception as e:
-
-        print("Logo animation error:", repr(e))
-
-
-# =========================
-# BOOT SCREEN
-# =========================
-
-def show_boot_screen():
-
-    try:
-
-        ensure_screen("boot")
-
-        draw_text(DEVICE_NAME, 0, 0)
-
-        draw_text("Starting...", 0, 16)
-
-        update(True)
-
-    except:
-        pass
-
-
-# =========================
-# STATUS SCREEN
-# =========================
-
-def show_status(ssid, password, ip, node_count):
-
-    try:
-
-        ensure_screen("status")
+        ensure_screen("status_info")
 
         clear_area(0, 0, 128, 64)
 
         draw_text("AP CONTROLLER", 0, 0)
 
-        draw_text("SSID:", 0, 16)
-        draw_text(ssid, 40, 16)
-
-        draw_text("PASS:", 0, 26)
-        draw_text(password, 40, 26)
+        draw_text("SSID:", 0, 20)
+        draw_text(ssid, 40, 20)
 
         draw_text("IP:", 0, 40)
         draw_text(ip, 40, 40)
-
-        draw_text("Nodes:", 0, 54)
-        draw_text(str(node_count), 60, 54)
 
         update()
 
     except Exception as e:
 
-        print("Status error:", repr(e))
+        print("Status info error:", repr(e))
 
 
 # =========================
-# TIME
+# STATUS HEALTH (40 detik)
 # =========================
 
-def get_current_time():
+def show_status_health(node_count):
 
     try:
 
-        rtc = machine.RTC()
+        ensure_screen("status_health")
 
-        dt = rtc.datetime()
+        clear_area(0, 0, 128, 64)
 
-        year = dt[0]
-        month = dt[1]
-        day = dt[2]
-        weekday = dt[3]
+        status = get_node_status(node_count)
 
-        hour = dt[4] + TIMEZONE_OFFSET
-        minute = dt[5]
-        second = dt[6]
+        uptime = get_uptime()
 
-        if hour >= 24:
-            hour -= 24
+        mem = get_memory_percent()
 
-        return (
-            year,
-            month,
-            day,
-            weekday,
-            hour,
-            minute,
-            second
-        )
+        draw_text("Nodes:", 0, 10)
+        draw_text(str(node_count), 60, 10)
 
-    except:
+        draw_text(status, 95, 10)
 
-        return (0,0,0,0,0,0,0)
+        draw_text("Up:", 0, 30)
+        draw_text(uptime, 60, 30)
+
+        draw_text("Mem:", 0, 50)
+        draw_text(str(mem) + "%", 60, 50)
+
+        update()
+
+    except Exception as e:
+
+        print("Status health error:", repr(e))
 
 
 # =========================
-# CLOCK SCREEN
+# CLOCK
 # =========================
 
 def show_clock():
