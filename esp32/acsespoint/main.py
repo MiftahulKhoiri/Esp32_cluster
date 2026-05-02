@@ -1,8 +1,10 @@
-# Import modul waktu dan sistem
+# =========================
+# IMPORT
+# =========================
+
 import time
 import gc
 
-# Import konfigurasi
 from config import (
     SSID,
     PASSWORD,
@@ -12,7 +14,6 @@ from config import (
     BOOT_DELAY
 )
 
-# Import modul sistem
 from ap_wifi import (
     start_access_point,
     get_ip
@@ -20,6 +21,7 @@ from ap_wifi import (
 
 from oled_display import (
     init_display,
+    show_logo_animation,
     show_boot_screen,
     show_status,
     show_clock
@@ -29,7 +31,6 @@ from node_monitor import (
     get_node_count
 )
 
-# Import modul LED
 try:
     import led_indicator as led
     LED_AVAILABLE = True
@@ -50,9 +51,6 @@ _cycle_start_time = 0
 # =========================
 
 def is_clock_mode():
-    """
-    Menentukan apakah saat ini harus menampilkan jam.
-    """
 
     now = time.ticks_ms()
 
@@ -78,11 +76,6 @@ def is_clock_mode():
 # =========================
 
 def update_display():
-    """
-    Memperbarui tampilan OLED berdasarkan mode:
-    - Status
-    - Clock
-    """
 
     global _last_display_update
 
@@ -92,6 +85,7 @@ def update_display():
         now,
         _last_display_update
     ) < DISPLAY_UPDATE_INTERVAL * 1000:
+
         return
 
     _last_display_update = now
@@ -115,7 +109,6 @@ def update_display():
                 node_count
             )
 
-            # LED activity jika ada node
             if LED_AVAILABLE:
 
                 if node_count > 0:
@@ -136,9 +129,6 @@ def update_display():
 # =========================
 
 def main():
-    """
-    Fungsi utama sistem.
-    """
 
     global _cycle_start_time
 
@@ -149,6 +139,22 @@ def main():
         if LED_AVAILABLE:
             led.set_state("boot")
 
+        # -------------------------
+        # INIT DISPLAY FIRST
+        # -------------------------
+
+        init_display()
+
+        # -------------------------
+        # LOGO ANIMATION
+        # -------------------------
+
+        show_logo_animation()
+
+        # -------------------------
+        # BOOT SCREEN
+        # -------------------------
+
         show_boot_screen()
 
         time.sleep(BOOT_DELAY)
@@ -156,9 +162,11 @@ def main():
         if LED_AVAILABLE:
             led.set_state("ap")
 
-        start_access_point()
+        # -------------------------
+        # START ACCESS POINT
+        # -------------------------
 
-        init_display()
+        start_access_point()
 
         gc.collect()
 
@@ -175,6 +183,10 @@ def main():
 
         if LED_AVAILABLE:
             led.set_state("error")
+
+    # =========================
+    # MAIN LOOP
+    # =========================
 
     while True:
 
