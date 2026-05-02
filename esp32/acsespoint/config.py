@@ -23,6 +23,20 @@ SUBNET = "255.255.255.0"
 # Gateway
 GATEWAY = "192.168.4.1"
 
+# =========================
+# INTERNET (UPLINK) CONFIG
+# =========================
+
+# WiFi router yang menyediakan internet
+
+INTERNET_SSID = "NamaWiFiRouter"
+
+INTERNET_PASSWORD = "PasswordRouter"
+
+# Timeout koneksi internet (detik)
+
+INTERNET_CONNECT_TIMEOUT = 15
+
 
 # =========================
 # OLED CONFIG
