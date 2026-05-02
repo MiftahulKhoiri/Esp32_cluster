@@ -2,8 +2,8 @@
 # WIFI CONFIG
 # =========================
 
-WIFI_SSID = "NamaWiFi"
-WIFI_PASSWORD = "PasswordWiFi"
+WIFI_SSID = "CLUSTER-NODE"
+WIFI_PASSWORD = "root123"
 
 # Timeout koneksi WiFi (detik)
 WIFI_CONNECT_TIMEOUT = 20
