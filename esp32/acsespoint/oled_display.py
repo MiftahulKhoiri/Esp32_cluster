@@ -428,10 +428,10 @@ def get_node_status(count):
 
 
 # =========================
-# STATUS INFO
+# STATUS INFO (10 detik)
 # =========================
 
-def show_status_info(ssid, ip):
+def show_status_info(ssid, password, ip):
 
     try:
 
@@ -441,11 +441,14 @@ def show_status_info(ssid, ip):
 
         draw_text("AP CONTROLLER", 0, 0)
 
-        draw_text("SSID:", 0, 20)
-        draw_text(ssid, 40, 20)
+        draw_text("SSID:", 0, 18)
+        draw_text(ssid, 48, 18)
 
-        draw_text("IP:", 0, 40)
-        draw_text(ip, 40, 40)
+        draw_text("PASS:", 0, 34)
+        draw_text(password, 48, 34)
+
+        draw_text("IP:", 0, 50)
+        draw_text(ip, 48, 50)
 
         update()
 
