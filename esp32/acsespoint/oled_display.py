@@ -1,4 +1,3 @@
-# Import modul hardware dan display
 from machine import Pin, I2C
 import machine
 import time
@@ -24,13 +23,14 @@ _i2c = None
 _display = None
 
 _last_update = 0
+_last_screen = None
 
-# interval minimal refresh (ms)
-UPDATE_INTERVAL = 500
+FRAME_INTERVAL = 800
+DEFAULT_CONTRAST = 130
 
 
 # =========================
-# FADE TRANSITION
+# SMART TRANSITION
 # =========================
 
 def fade_transition():
@@ -42,25 +42,34 @@ def fade_transition():
         if not disp:
             return
 
-        # redup
-        for c in range(255, 150, -15):
+        for c in range(255, 180, -5):
 
             disp.contrast(c)
-            time.sleep_ms(10)
+            time.sleep_ms(6)
 
-        # terang
-        for c in range(150, 256, 15):
+        for c in range(180, 256, 5):
 
             disp.contrast(c)
-            time.sleep_ms(10)
+            time.sleep_ms(6)
 
     except:
 
         pass
 
 
+def smart_transition(screen_name):
+
+    global _last_screen
+
+    if screen_name != _last_screen:
+
+        fade_transition()
+
+        _last_screen = screen_name
+
+
 # =========================
-# INIT RTC
+# RTC
 # =========================
 
 def init_rtc():
@@ -83,7 +92,7 @@ def init_rtc():
 
 
 # =========================
-# INIT DISPLAY
+# DISPLAY INIT
 # =========================
 
 def init_display():
@@ -93,7 +102,7 @@ def init_display():
 
     try:
 
-        print("Initializing OLED display")
+        print("Initializing OLED")
 
         init_rtc()
 
@@ -135,11 +144,13 @@ def init_display():
             addr=address
         )
 
+        _display.contrast(DEFAULT_CONTRAST)
+
         clear()
 
         update()
 
-        print("OLED initialized")
+        print("OLED ready")
 
         return _display
 
@@ -166,7 +177,7 @@ def get_display():
 
 
 # =========================
-# CLEAR SCREEN
+# CLEAR
 # =========================
 
 def clear():
@@ -179,9 +190,28 @@ def clear():
 
             disp.fill(0)
 
-    except Exception as e:
+    except:
 
-        print("OLED clear error:", e)
+        pass
+
+
+# =========================
+# PARTIAL CLEAR
+# =========================
+
+def clear_area(x, y, w, h):
+
+    try:
+
+        disp = get_display()
+
+        if disp:
+
+            disp.fill_rect(x, y, w, h, 0)
+
+    except:
+
+        pass
 
 
 # =========================
@@ -198,13 +228,13 @@ def draw_text(text, x, y):
 
             disp.text(str(text), x, y)
 
-    except Exception as e:
+    except:
 
-        print("OLED text error:", e)
+        pass
 
 
 # =========================
-# SAFE UPDATE (ANTI FLICKER)
+# SAFE UPDATE
 # =========================
 
 def update():
@@ -216,12 +246,11 @@ def update():
         disp = get_display()
 
         if not disp:
-
             return
 
         now = time.ticks_ms()
 
-        if time.ticks_diff(now, _last_update) < UPDATE_INTERVAL:
+        if time.ticks_diff(now, _last_update) < FRAME_INTERVAL:
 
             return
 
@@ -229,20 +258,20 @@ def update():
 
         _last_update = now
 
-    except Exception as e:
+    except:
 
-        print("OLED update error:", e)
+        pass
 
 
 # =========================
-# SHOW BOOT SCREEN
+# BOOT SCREEN
 # =========================
 
 def show_boot_screen():
 
     try:
 
-        fade_transition()
+        smart_transition("boot")
 
         clear()
 
@@ -252,20 +281,20 @@ def show_boot_screen():
 
         update()
 
-    except Exception as e:
+    except:
 
-        print("Boot screen error:", e)
+        pass
 
 
 # =========================
-# SHOW STATUS
+# STATUS SCREEN
 # =========================
 
 def show_status(ssid, password, ip, node_count):
 
     try:
 
-        fade_transition()
+        smart_transition("status")
 
         clear()
 
@@ -285,13 +314,13 @@ def show_status(ssid, password, ip, node_count):
 
         update()
 
-    except Exception as e:
+    except:
 
-        print("Display status error:", e)
+        pass
 
 
 # =========================
-# GET CURRENT TIME
+# TIME
 # =========================
 
 def get_current_time():
@@ -331,14 +360,16 @@ def get_current_time():
 
 
 # =========================
-# SHOW CLOCK
+# CLOCK SCREEN
 # =========================
 
 def show_clock():
 
     try:
 
-        clear()
+        smart_transition("clock")
+
+        clear_area(0, 20, 128, 44)
 
         (
             year,
@@ -390,6 +421,6 @@ def show_clock():
 
         update()
 
-    except Exception as e:
+    except:
 
-        print("Clock display error:", e)
+        pass
