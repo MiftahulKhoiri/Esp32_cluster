@@ -3,6 +3,7 @@ import machine
 import time
 
 import ssd1306
+import framebuf
 
 from config import (
     OLED_SCL,
@@ -30,6 +31,26 @@ DEFAULT_CONTRAST = 130
 
 
 # =========================
+# LOGO BITMAP (32x32)
+# =========================
+
+logo_bitmap = bytearray([
+
+    0x18,0x3C,0x7E,0xDB,
+    0xFF,0xDB,0x7E,0x3C,
+    0x18,0x00,0x18,0x3C,
+
+    0x7E,0xDB,0xFF,0xDB,
+    0x7E,0x3C,0x18,0x00,
+
+    0x18,0x3C,0x7E,0xDB,
+    0xFF,0xDB,0x7E,0x3C,
+    0x18,0x00,0x00,0x00
+
+])
+
+
+# =========================
 # SMART TRANSITION
 # =========================
 
@@ -42,15 +63,15 @@ def fade_transition():
         if not disp:
             return
 
-        for c in range(255, 180, -5):
+        for c in range(130, 115, -2):
 
             disp.contrast(c)
-            time.sleep_ms(6)
+            time.sleep_ms(8)
 
-        for c in range(180, 256, 5):
+        for c in range(115, 130, 2):
 
             disp.contrast(c)
-            time.sleep_ms(6)
+            time.sleep_ms(8)
 
     except:
 
@@ -123,8 +144,6 @@ def init_display():
 
             return None
 
-        print("I2C devices:", devices)
-
         if 0x3C in devices:
 
             address = 0x3C
@@ -147,7 +166,6 @@ def init_display():
         _display.contrast(DEFAULT_CONTRAST)
 
         clear()
-
         update()
 
         print("OLED ready")
@@ -194,10 +212,6 @@ def clear():
 
         pass
 
-
-# =========================
-# PARTIAL CLEAR
-# =========================
 
 def clear_area(x, y, w, h):
 
@@ -261,6 +275,83 @@ def update():
     except:
 
         pass
+
+
+# =========================
+# LOGO ANIMATION
+# =========================
+
+def show_logo_animation():
+
+    try:
+
+        smart_transition("logo")
+
+        disp = get_display()
+
+        if not disp:
+            return
+
+        icon = framebuf.FrameBuffer(
+            logo_bitmap,
+            32,
+            32,
+            framebuf.MONO_HLSB
+        )
+
+        # icon turun
+
+        for y in range(-32, 8, 2):
+
+            clear()
+
+            disp.blit(icon, 48, y)
+
+            update()
+
+            time.sleep_ms(30)
+
+        # text muncul bertahap
+
+        title = DEVICE_NAME
+
+        for i in range(len(title) + 1):
+
+            clear_area(0, 36, 128, 12)
+
+            draw_text(title[:i], 8, 36)
+
+            update()
+
+            time.sleep_ms(40)
+
+        draw_text("AP CONTROLLER", 12, 50)
+
+        update()
+
+        time.sleep(0.5)
+
+        # pulse brightness
+
+        for _ in range(2):
+
+            for c in range(130, 115, -2):
+
+                disp.contrast(c)
+
+                time.sleep_ms(8)
+
+            for c in range(115, 130, 2):
+
+                disp.contrast(c)
+
+                time.sleep_ms(8)
+
+        time.sleep(1)
+
+    except Exception as e:
+
+        print("Logo animation error:", e)
 
 
 # =========================
