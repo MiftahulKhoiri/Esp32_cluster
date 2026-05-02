@@ -140,6 +140,7 @@ def update_display():
 
             show_status_info(
                 SSID,
+                PASSWORD,
                 ip
             )
 
