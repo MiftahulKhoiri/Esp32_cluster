@@ -3,10 +3,8 @@ from machine import Pin, I2C
 import machine
 import time
 
-# Library driver OLED SSD1306
 import ssd1306
 
-# Ambil konfigurasi dari file config
 from config import (
     OLED_SCL,
     OLED_SDA,
@@ -18,7 +16,6 @@ from config import (
     TIMEZONE_OFFSET
 )
 
-
 # =========================
 # GLOBAL
 # =========================
@@ -26,27 +23,62 @@ from config import (
 _i2c = None
 _display = None
 
+_last_update = 0
+
+# interval minimal refresh (ms)
+UPDATE_INTERVAL = 500
+
+
+# =========================
+# FADE TRANSITION
+# =========================
+
+def fade_transition():
+
+    try:
+
+        disp = get_display()
+
+        if not disp:
+            return
+
+        # redup
+        for c in range(255, 150, -15):
+
+            disp.contrast(c)
+            time.sleep_ms(10)
+
+        # terang
+        for c in range(150, 256, 15):
+
+            disp.contrast(c)
+            time.sleep_ms(10)
+
+    except:
+
+        pass
+
 
 # =========================
 # INIT RTC
 # =========================
 
 def init_rtc():
-    """
-    Menginisialisasi RTC dengan waktu default jika belum pernah diset.
-    """
 
     try:
+
         rtc = machine.RTC()
 
         dt = rtc.datetime()
 
-        # Jika tahun masih default (belum pernah diset)
         if dt[0] < 2024:
+
             rtc.datetime(RTC_DEFAULT_TIME)
+
             print("RTC initialized")
 
     except Exception as e:
+
         print("RTC init error:", e)
 
 
@@ -55,14 +87,12 @@ def init_rtc():
 # =========================
 
 def init_display():
-    """
-    Menginisialisasi layar OLED SSD1306 menggunakan interface I2C.
-    """
 
     global _i2c
     global _display
 
     try:
+
         print("Initializing OLED display")
 
         init_rtc()
@@ -79,16 +109,23 @@ def init_display():
         devices = _i2c.scan()
 
         if not devices:
+
             print("OLED not found")
+
             return None
 
         print("I2C devices:", devices)
 
         if 0x3C in devices:
+
             address = 0x3C
+
         elif 0x3D in devices:
+
             address = 0x3D
+
         else:
+
             address = devices[0]
 
         _display = ssd1306.SSD1306_I2C(
@@ -100,12 +137,16 @@ def init_display():
 
         clear()
 
+        update()
+
         print("OLED initialized")
 
         return _display
 
     except Exception as e:
+
         print("OLED init error:", e)
+
         return None
 
 
@@ -118,6 +159,7 @@ def get_display():
     global _display
 
     if _display is None:
+
         init_display()
 
     return _display
@@ -130,13 +172,15 @@ def get_display():
 def clear():
 
     try:
+
         disp = get_display()
 
         if disp:
+
             disp.fill(0)
-            disp.show()
 
     except Exception as e:
+
         print("OLED clear error:", e)
 
 
@@ -147,28 +191,46 @@ def clear():
 def draw_text(text, x, y):
 
     try:
+
         disp = get_display()
 
         if disp:
+
             disp.text(str(text), x, y)
 
     except Exception as e:
+
         print("OLED text error:", e)
 
 
 # =========================
-# UPDATE SCREEN
+# SAFE UPDATE (ANTI FLICKER)
 # =========================
 
 def update():
 
+    global _last_update
+
     try:
+
         disp = get_display()
 
-        if disp:
-            disp.show()
+        if not disp:
+
+            return
+
+        now = time.ticks_ms()
+
+        if time.ticks_diff(now, _last_update) < UPDATE_INTERVAL:
+
+            return
+
+        disp.show()
+
+        _last_update = now
 
     except Exception as e:
+
         print("OLED update error:", e)
 
 
@@ -179,14 +241,19 @@ def update():
 def show_boot_screen():
 
     try:
+
+        fade_transition()
+
         clear()
 
         draw_text(DEVICE_NAME, 0, 0)
+
         draw_text("Starting...", 0, 16)
 
         update()
 
     except Exception as e:
+
         print("Boot screen error:", e)
 
 
@@ -197,6 +264,9 @@ def show_boot_screen():
 def show_status(ssid, password, ip, node_count):
 
     try:
+
+        fade_transition()
+
         clear()
 
         draw_text("AP CONTROLLER", 0, 0)
@@ -216,6 +286,7 @@ def show_status(ssid, password, ip, node_count):
         update()
 
     except Exception as e:
+
         print("Display status error:", e)
 
 
@@ -224,11 +295,9 @@ def show_status(ssid, password, ip, node_count):
 # =========================
 
 def get_current_time():
-    """
-    Mengambil waktu RTC dan menambahkan timezone offset.
-    """
 
     try:
+
         rtc = machine.RTC()
 
         dt = rtc.datetime()
@@ -243,6 +312,7 @@ def get_current_time():
         second = dt[6]
 
         if hour >= 24:
+
             hour -= 24
 
         return (
@@ -255,16 +325,9 @@ def get_current_time():
             second
         )
 
-    except Exception:
-        return (
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0
-        )
+    except:
+
+        return (0, 0, 0, 0, 0, 0, 0)
 
 
 # =========================
@@ -272,14 +335,9 @@ def get_current_time():
 # =========================
 
 def show_clock():
-    """
-    Menampilkan waktu realtime:
-    HH:MM:SS
-    Hari
-    Tanggal/Bulan/Tahun
-    """
 
     try:
+
         clear()
 
         (
@@ -303,8 +361,11 @@ def show_clock():
         ]
 
         if weekday < len(days):
+
             day_name = days[weekday]
+
         else:
+
             day_name = "Day"
 
         time_str = "{:02d}:{:02d}:{:02d}".format(
@@ -330,4 +391,5 @@ def show_clock():
         update()
 
     except Exception as e:
+
         print("Clock display error:", e)
