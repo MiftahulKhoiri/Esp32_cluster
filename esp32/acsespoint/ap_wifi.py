@@ -1,8 +1,10 @@
 # Import modul network dan waktu
+
 import network
 import time
 
 # Ambil konfigurasi dari file config
+
 from config import (
     SSID,
     PASSWORD,
@@ -16,6 +18,7 @@ from config import (
     INTERNET_PASSWORD,
     INTERNET_CONNECT_TIMEOUT
 )
+
 
 # =========================
 # GLOBAL
@@ -41,6 +44,8 @@ def connect_to_internet():
 
         _sta.active(True)
 
+        # Jika sudah connect → return cepat
+
         if _sta.isconnected():
 
             print("Internet already connected")
@@ -49,36 +54,62 @@ def connect_to_internet():
 
             return True
 
+        # Pastikan state bersih
+
+        try:
+            _sta.disconnect()
+        except:
+            pass
+
         _sta.connect(
             INTERNET_SSID,
             INTERNET_PASSWORD
         )
 
-        timeout = INTERNET_CONNECT_TIMEOUT
+        start = time.ticks_ms()
 
         while not _sta.isconnected():
 
             time.sleep(1)
 
-            timeout -= 1
+            elapsed = time.ticks_diff(
+                time.ticks_ms(),
+                start
+            ) // 1000
 
-            print("Waiting internet...", timeout)
+            remaining = (
+                INTERNET_CONNECT_TIMEOUT
+                - elapsed
+            )
 
-            if timeout <= 0:
+            print(
+                "Waiting internet...",
+                remaining
+            )
 
-                print("Internet connection timeout")
+            if elapsed >= INTERNET_CONNECT_TIMEOUT:
+
+                print(
+                    "Internet connection timeout"
+                )
 
                 return False
 
         print("Internet connected")
 
-        print("STA IP:", _sta.ifconfig()[0])
+        print(
+            "STA IP:",
+            _sta.ifconfig()[0]
+        )
 
         return True
 
     except Exception as e:
 
-        print("Internet connect error:", e)
+        print(
+            "Internet connect error:",
+            e
+        )
 
         return False
 
@@ -103,7 +134,9 @@ def enable_nat():
 
         else:
 
-            print("NAT feature not available")
+            print(
+                "NAT feature not available"
+            )
 
             return False
 
@@ -124,7 +157,9 @@ def start_access_point():
 
     try:
 
-        _ap = network.WLAN(network.AP_IF)
+        _ap = network.WLAN(
+            network.AP_IF
+        )
 
         if not _ap.active():
 
@@ -132,7 +167,9 @@ def start_access_point():
 
             time.sleep(1)
 
-        print("Starting Access Point")
+        print(
+            "Starting Access Point"
+        )
 
         _ap.config(
             essid=SSID,
@@ -151,17 +188,25 @@ def start_access_point():
 
         time.sleep(1)
 
-        print("Access Point started")
+        print(
+            "Access Point started"
+        )
 
         print("SSID :", SSID)
 
-        print("AP IP:", _ap.ifconfig()[0])
+        print(
+            "AP IP:",
+            _ap.ifconfig()[0]
+        )
 
         return True
 
     except Exception as e:
 
-        print("AP start error:", e)
+        print(
+            "AP start error:",
+            e
+        )
 
         return False
 
@@ -182,11 +227,20 @@ def start_gateway():
 
     print("Gateway status")
 
-    print("Internet:", internet_ok)
+    print(
+        "Internet:",
+        internet_ok
+    )
 
-    print("Access Point:", ap_ok)
+    print(
+        "Access Point:",
+        ap_ok
+    )
 
-    print("NAT:", nat_ok)
+    print(
+        "NAT:",
+        nat_ok
+    )
 
     if ap_ok:
 
@@ -211,7 +265,9 @@ def get_ap():
 
     if _ap is None:
 
-        _ap = network.WLAN(network.AP_IF)
+        _ap = network.WLAN(
+            network.AP_IF
+        )
 
     return _ap
 
@@ -281,13 +337,18 @@ def get_connected_clients():
 
         ap = get_ap()
 
-        stations = ap.status("stations")
+        stations = ap.status(
+            "stations"
+        )
 
         return stations
 
     except Exception as e:
 
-        print("Station list error:", e)
+        print(
+            "Station list error:",
+            e
+        )
 
         return []
 
@@ -300,7 +361,9 @@ def get_client_count():
 
     try:
 
-        return len(get_connected_clients())
+        return len(
+            get_connected_clients()
+        )
 
     except Exception:
 
