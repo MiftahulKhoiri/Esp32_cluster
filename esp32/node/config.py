@@ -3,7 +3,7 @@
 # =========================
 
 WIFI_SSID = "CLUSTER-NODE"
-WIFI_PASSWORD = "root123"
+WIFI_PASSWORD = "root1234"
 
 # Timeout koneksi WiFi (detik)
 WIFI_CONNECT_TIMEOUT = 20
