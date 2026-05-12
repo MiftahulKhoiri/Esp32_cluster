@@ -1,29 +1,37 @@
-
 # =========================================================
 # OLED DISPLAY INDUSTRIAL FRAMEWORK
 # File : oled_display.py
-# Target:
-# - ESP32
-# - MicroPython
-# - SSD1306
+# =========================================================
+#
+# INDUSTRIAL GRADE OLED FRAMEWORK
+# Untuk ESP32 + MicroPython + SSD1306
 #
 # FITUR:
 # - Production Ready
-# - Industrial Grade Structure
-# - Ultra Low RAM
-# - Async Compatible
-# - Multitasking Safe
+# - Ultra Stable Runtime
+# - Auto Recovery
 # - Auto Sleep
 # - Anti Burn-In
-# - Partial Refresh
-# - Page Rendering
-# - Mini GUI Framework
-# - Smooth Animation
-# - State Machine UI
+# - Thread Safe
+# - Async Compatible
+# - Low RAM Usage
+# - Dirty Refresh System
+# - GUI Framework
+# - State Machine
+# - Animation Engine
+# - Auto Reconnect OLED
+# - Memory Protection
+# - Long Runtime Stability
 #
 # =========================================================
 
+
+# =========================================================
+# IMPORT
+# =========================================================
+
 from machine import Pin, I2C
+
 import machine
 import time
 import gc
@@ -33,61 +41,136 @@ import _thread
 import ssd1306
 
 from config import (
+
     OLED_SCL,
     OLED_SDA,
+
     OLED_WIDTH,
     OLED_HEIGHT,
+
     OLED_FREQ,
+
     DEVICE_NAME
 )
+
 
 # =========================================================
 # GLOBAL
 # =========================================================
 
 _i2c = None
+
 _display = None
 
 _initialized = False
+
 _display_failed = False
+
+_display_sleep = False
 
 _lock = _thread.allocate_lock()
 
 _last_update = 0
+
 _last_activity = 0
 
-_current_page = None
+_last_gc = 0
+
+_last_recovery = 0
 
 FRAME_INTERVAL = 33
+
 SLEEP_TIMEOUT = 60000
+
+GC_INTERVAL = 30000
+
+RECOVERY_INTERVAL = 10000
 
 DEFAULT_CONTRAST = 120
 
 ANTI_BURNIN_SHIFT = True
 
 _burnin_offset = 0
+
 _last_burnin = 0
 
-DIRTY_X = 0
-DIRTY_Y = 0
-DIRTY_W = OLED_WIDTH
-DIRTY_H = OLED_HEIGHT
-
-# =========================================================
-# PAGE SYSTEM
-# =========================================================
+_current_page = None
 
 _pages = {}
+
+STATE_BOOT = 0
+STATE_IDLE = 1
+STATE_MENU = 2
+STATE_STATUS = 3
+
+_current_state = STATE_BOOT
+
 
 # =========================================================
 # SAFE LOCK
 # =========================================================
 
 def acquire():
-    _lock.acquire()
+
+    try:
+        _lock.acquire()
+
+    except:
+        pass
+
 
 def release():
-    _lock.release()
+
+    try:
+        _lock.release()
+
+    except:
+        pass
+
+
+# =========================================================
+# DISPLAY RECOVERY
+# =========================================================
+
+def recover():
+
+    global _display
+    global _initialized
+    global _display_failed
+    global _last_recovery
+
+    now = time.ticks_ms()
+
+    if time.ticks_diff(
+        now,
+        _last_recovery
+    ) < RECOVERY_INTERVAL:
+
+        return False
+
+    _last_recovery = now
+
+    try:
+
+        print("OLED RECOVERY")
+
+        _display = None
+
+        _initialized = False
+
+        _display_failed = False
+
+        return init()
+
+    except Exception as e:
+
+        print(
+            "RECOVERY ERROR:",
+            repr(e)
+        )
+
+        return False
+
 
 # =========================================================
 # INIT DISPLAY
@@ -97,6 +180,7 @@ def init():
 
     global _i2c
     global _display
+
     global _initialized
     global _display_failed
 
@@ -105,6 +189,8 @@ def init():
 
     try:
 
+        print("OLED INIT")
+
         _i2c = I2C(
             0,
             scl=Pin(OLED_SCL),
@@ -112,21 +198,35 @@ def init():
             freq=OLED_FREQ
         )
 
-        time.sleep_ms(200)
+        time.sleep_ms(300)
 
         devices = _i2c.scan()
 
         if not devices:
+
             print("OLED NOT FOUND")
+
             _display_failed = True
+
             return False
 
+        # Auto detect address
         if 0x3C in devices:
+
             addr = 0x3C
+
         elif 0x3D in devices:
+
             addr = 0x3D
+
         else:
+
             addr = devices[0]
+
+        print(
+            "OLED ADDRESS:",
+            hex(addr)
+        )
 
         _display = ssd1306.SSD1306_I2C(
             OLED_WIDTH,
@@ -135,12 +235,17 @@ def init():
             addr=addr
         )
 
-        _display.contrast(DEFAULT_CONTRAST)
+        _display.contrast(
+            DEFAULT_CONTRAST
+        )
 
         clear()
-        show(force=True)
+
+        show(True)
 
         _initialized = True
+
+        _display_failed = False
 
         print("OLED READY")
 
@@ -148,11 +253,15 @@ def init():
 
     except Exception as e:
 
-        print("OLED INIT ERROR:", repr(e))
+        print(
+            "OLED INIT ERROR:",
+            repr(e)
+        )
 
         _display_failed = True
 
         return False
+
 
 # =========================================================
 # GET DISPLAY
@@ -160,16 +269,21 @@ def init():
 
 def display():
 
+    global _display
+
     if _display_failed:
-        return None
+
+        recover()
 
     if not _initialized:
+
         init()
 
     return _display
 
+
 # =========================================================
-# ACTIVITY
+# DISPLAY ACTIVITY
 # =========================================================
 
 def activity():
@@ -178,11 +292,14 @@ def activity():
 
     _last_activity = time.ticks_ms()
 
+
 # =========================================================
 # AUTO SLEEP
 # =========================================================
 
 def sleep_check():
+
+    global _display_sleep
 
     try:
 
@@ -199,10 +316,20 @@ def sleep_check():
         )
 
         if idle > SLEEP_TIMEOUT:
-            disp.poweroff()
 
-    except:
-        pass
+            if not _display_sleep:
+
+                disp.poweroff()
+
+                _display_sleep = True
+
+    except Exception as e:
+
+        print(
+            "SLEEP ERROR:",
+            repr(e)
+        )
+
 
 # =========================================================
 # WAKE DISPLAY
@@ -210,18 +337,29 @@ def sleep_check():
 
 def wake():
 
+    global _display_sleep
+
     try:
 
         disp = display()
 
         if disp:
 
-            disp.poweron()
+            if _display_sleep:
+
+                disp.poweron()
+
+                _display_sleep = False
 
             activity()
 
-    except:
-        pass
+    except Exception as e:
+
+        print(
+            "WAKE ERROR:",
+            repr(e)
+        )
+
 
 # =========================================================
 # ANTI BURN-IN
@@ -237,18 +375,44 @@ def burnin_protection():
 
     now = time.ticks_ms()
 
-    if time.ticks_diff(now, _last_burnin) < 15000:
+    if time.ticks_diff(
+        now,
+        _last_burnin
+    ) < 15000:
+
         return
 
     _burnin_offset += 1
 
     if _burnin_offset > 2:
+
         _burnin_offset = 0
 
     _last_burnin = now
 
+
 # =========================================================
-# CLEAR
+# MEMORY MAINTENANCE
+# =========================================================
+
+def memory_maintenance():
+
+    global _last_gc
+
+    now = time.ticks_ms()
+
+    if time.ticks_diff(
+        now,
+        _last_gc
+    ) >= GC_INTERVAL:
+
+        gc.collect()
+
+        _last_gc = now
+
+
+# =========================================================
+# CLEAR SCREEN
 # =========================================================
 
 def clear():
@@ -257,40 +421,28 @@ def clear():
 
         acquire()
 
+        wake()
+
         disp = display()
 
         if disp:
 
             disp.fill(0)
 
-            mark_dirty(
-                0,
-                0,
-                OLED_WIDTH,
-                OLED_HEIGHT
-            )
+    except Exception as e:
+
+        print(
+            "CLEAR ERROR:",
+            repr(e)
+        )
 
     finally:
+
         release()
 
-# =========================================================
-# DIRTY RECTANGLE
-# =========================================================
-
-def mark_dirty(x, y, w, h):
-
-    global DIRTY_X
-    global DIRTY_Y
-    global DIRTY_W
-    global DIRTY_H
-
-    DIRTY_X = x
-    DIRTY_Y = y
-    DIRTY_W = w
-    DIRTY_H = h
 
 # =========================================================
-# SHOW
+# SHOW OLED
 # =========================================================
 
 def show(force=False):
@@ -300,6 +452,8 @@ def show(force=False):
     try:
 
         acquire()
+
+        wake()
 
         disp = display()
 
@@ -325,47 +479,77 @@ def show(force=False):
 
         activity()
 
+    except Exception as e:
+
+        print(
+            "SHOW ERROR:",
+            repr(e)
+        )
+
+        recover()
+
     finally:
+
         release()
+
 
 # =========================================================
 # DRAW TEXT
 # =========================================================
 
-def text(msg, x, y, refresh=False):
+def text(
+    message,
+    x,
+    y,
+    refresh=False
+):
 
     try:
 
         acquire()
+
+        wake()
 
         disp = display()
 
         if disp:
 
             disp.text(
-                str(msg),
+                str(message),
                 x + _burnin_offset,
                 y + _burnin_offset,
                 1
             )
 
-            mark_dirty(x, y, 80, 10)
+    except Exception as e:
+
+        print(
+            "TEXT ERROR:",
+            repr(e)
+        )
 
     finally:
+
         release()
 
     if refresh:
+
         show()
+
 
 # =========================================================
 # CENTER TEXT
 # =========================================================
 
-def center(msg, y=28, refresh=False):
+def center(
+    message,
+    y=28,
+    refresh=False
+):
 
-    msg = str(msg)
+    message = str(message)
 
-    width = len(msg) * 8
+    width = len(message) * 8
 
     x = (OLED_WIDTH - width) // 2
 
@@ -373,21 +557,30 @@ def center(msg, y=28, refresh=False):
         x = 0
 
     text(
-        msg,
+        message,
         x,
         y,
         refresh
     )
 
+
 # =========================================================
 # RECTANGLE
 # =========================================================
 
-def rect(x, y, w, h, fill=False):
+def rect(
+    x,
+    y,
+    w,
+    h,
+    fill=False
+):
 
     try:
 
         acquire()
+
+        wake()
 
         disp = display()
 
@@ -395,200 +588,329 @@ def rect(x, y, w, h, fill=False):
             return
 
         if fill:
-            disp.fill_rect(x, y, w, h, 1)
-        else:
-            disp.rect(x, y, w, h, 1)
 
-        mark_dirty(x, y, w, h)
-
-    finally:
-        release()
-
-# =========================================================
-# LOADING
-# =========================================================
-
-def loading(title="Loading", duration=3):
-
-    start = time.time()
-
-    while (time.time() - start) < duration:
-
-        for i in range(4):
-
-            clear()
-
-            center(
-                title + ("." * i)
+            disp.fill_rect(
+                x,
+                y,
+                w,
+                h,
+                1
             )
 
-            show(True)
+        else:
 
-            time.sleep_ms(250)
+            disp.rect(
+                x,
+                y,
+                w,
+                h,
+                1
+            )
 
-            gc.collect()
+    except Exception as e:
 
-# =========================================================
-# PROGRESS BAR
-# =========================================================
+        print(
+            "RECT ERROR:",
+            repr(e)
+        )
 
-def progress(percent, title="Loading"):
+    finally:
 
-    if percent < 0:
-        percent = 0
+        release()
 
-    if percent > 100:
-        percent = 100
-
-    clear()
-
-    center(title, 10)
-
-    rect(14, 30, 100, 12)
-
-    width = int((percent / 100) * 96)
-
-    rect(
-        16,
-        32,
-        width,
-        8,
-        True
-    )
-
-    center(
-        str(percent) + "%",
-        50
-    )
-
-    show(True)
 
 # =========================================================
-# CYBERPUNK DASHBOARD
+# STATUS INFO
 # =========================================================
 
-def cyberpunk_dashboard(
-    cpu=0,
-    mem=0,
-    net=0
+def show_status_info(
+    ssid,
+    password,
+    ip
 ):
 
     clear()
 
-    text("SYS CORE", 0, 0)
+    text(
+        "AP CONTROLLER",
+        0,
+        0
+    )
 
-    text("CPU", 0, 18)
-    rect(30, 18, cpu, 6, True)
+    text(
+        "SSID:",
+        0,
+        18
+    )
 
-    text("MEM", 0, 34)
-    rect(30, 34, mem, 6, True)
+    text(
+        ssid,
+        48,
+        18
+    )
 
-    text("NET", 0, 50)
-    rect(30, 50, net, 6, True)
+    text(
+        "PASS:",
+        0,
+        34
+    )
+
+    text(
+        password,
+        48,
+        34
+    )
+
+    text(
+        "IP:",
+        0,
+        50
+    )
+
+    text(
+        ip,
+        48,
+        50
+    )
 
     show()
+
+
+# =========================================================
+# STATUS HEALTH
+# =========================================================
+
+def show_status_health(
+    node_count
+):
+
+    clear()
+
+    mem = gc.mem_free()
+
+    text(
+        "NODES:",
+        0,
+        10
+    )
+
+    text(
+        str(node_count),
+        70,
+        10
+    )
+
+    text(
+        "FREE RAM:",
+        0,
+        30
+    )
+
+    text(
+        str(mem),
+        70,
+        30
+    )
+
+    text(
+        "SYSTEM OK",
+        0,
+        50
+    )
+
+    show()
+
+
+# =========================================================
+# CLOCK
+# =========================================================
+
+def show_clock():
+
+    try:
+
+        rtc = machine.RTC()
+
+        dt = rtc.datetime()
+
+        hour = dt[4]
+        minute = dt[5]
+        second = dt[6]
+
+        clear()
+
+        center(
+            "{:02d}:{:02d}:{:02d}".format(
+                hour,
+                minute,
+                second
+            ),
+            24
+        )
+
+        show()
+
+    except Exception as e:
+
+        print(
+            "CLOCK ERROR:",
+            repr(e)
+        )
+
 
 # =========================================================
 # ROBOT EYES
 # =========================================================
 
-def robot_eyes(offset=0, blink=False):
+def robot_eyes(
+    offset=0,
+    blink=False
+):
+
+    try:
+
+        clear()
+
+        wake()
+
+        disp = display()
+
+        if not disp:
+            return
+
+        lx = 34 + offset
+        rx = 94 + offset
+
+        y = 32
+
+        if blink:
+
+            disp.fill_rect(
+                lx - 15,
+                y,
+                30,
+                3,
+                1
+            )
+
+            disp.fill_rect(
+                rx - 15,
+                y,
+                30,
+                3,
+                1
+            )
+
+        else:
+
+            disp.fill_rect(
+                lx - 15,
+                y - 15,
+                30,
+                30,
+                1
+            )
+
+            disp.fill_rect(
+                rx - 15,
+                y - 15,
+                30,
+                30,
+                1
+            )
+
+            disp.fill_rect(
+                lx - 4,
+                y - 4,
+                8,
+                8,
+                0
+            )
+
+            disp.fill_rect(
+                rx - 4,
+                y - 4,
+                8,
+                8,
+                0
+            )
+
+        show(True)
+
+    except Exception as e:
+
+        print(
+            "ROBOT ERROR:",
+            repr(e)
+        )
+
+
+# =========================================================
+# LOGO ANIMATION
+# =========================================================
+
+def show_logo_animation():
+
+    try:
+
+        for i in range(3):
+
+            clear()
+
+            center(
+                DEVICE_NAME,
+                20
+            )
+
+            center(
+                "LOADING" + ("." * i),
+                40
+            )
+
+            show(True)
+
+            time.sleep_ms(400)
+
+    except Exception as e:
+
+        print(
+            "LOGO ERROR:",
+            repr(e)
+        )
+
+
+# =========================================================
+# BOOT SCREEN
+# =========================================================
+
+def show_boot_screen():
 
     clear()
 
-    disp = display()
+    center(
+        DEVICE_NAME,
+        16
+    )
 
-    if not disp:
-        return
-
-    lx = 34 + offset
-    rx = 94 + offset
-
-    y = 32
-
-    if blink:
-
-        disp.fill_rect(
-            lx - 15,
-            y,
-            30,
-            3,
-            1
-        )
-
-        disp.fill_rect(
-            rx - 15,
-            y,
-            30,
-            3,
-            1
-        )
-
-    else:
-
-        disp.fill_rect(
-            lx - 15,
-            y - 15,
-            30,
-            30,
-            1
-        )
-
-        disp.fill_rect(
-            rx - 15,
-            y - 15,
-            30,
-            30,
-            1
-        )
-
-        disp.fill_rect(
-            lx - 4,
-            y - 4,
-            8,
-            8,
-            0
-        )
-
-        disp.fill_rect(
-            rx - 4,
-            y - 4,
-            8,
-            8,
-            0
-        )
+    center(
+        "SYSTEM START",
+        36
+    )
 
     show(True)
 
-# =========================================================
-# SMOOTH ANIMATION
-# =========================================================
-
-def smooth_move():
-
-    for i in range(-6, 7):
-
-        robot_eyes(i)
-
-        time.sleep_ms(30)
-
-    for i in range(6, -7, -1):
-
-        robot_eyes(i)
-
-        time.sleep_ms(30)
 
 # =========================================================
 # PAGE SYSTEM
 # =========================================================
 
-def register_page(name, callback):
+def register_page(
+    name,
+    callback
+):
 
     _pages[name] = callback
 
-# =========================================================
-# RENDER PAGE
-# =========================================================
 
 def render(name):
 
@@ -599,11 +921,17 @@ def render(name):
 
     _current_page = name
 
-    _pages[name]()
+    try:
 
-# =========================================================
-# NEXT PAGE
-# =========================================================
+        _pages[name]()
+
+    except Exception as e:
+
+        print(
+            "PAGE ERROR:",
+            repr(e)
+        )
+
 
 def next_page():
 
@@ -620,7 +948,9 @@ def next_page():
 
         return
 
-    idx = keys.index(_current_page)
+    idx = keys.index(
+        _current_page
+    )
 
     idx += 1
 
@@ -628,6 +958,34 @@ def next_page():
         idx = 0
 
     render(keys[idx])
+
+
+# =========================================================
+# GUI LABEL
+# =========================================================
+
+class Label:
+
+    def __init__(
+        self,
+        x,
+        y,
+        value
+    ):
+
+        self.x = x
+        self.y = y
+
+        self.value = value
+
+    def draw(self):
+
+        text(
+            self.value,
+            self.x,
+            self.y
+        )
+
 
 # =========================================================
 # GUI BUTTON
@@ -667,45 +1025,9 @@ class Button:
             self.y + 4
         )
 
-# =========================================================
-# GUI LABEL
-# =========================================================
-
-class Label:
-
-    def __init__(
-        self,
-        x,
-        y,
-        text_value
-    ):
-
-        self.x = x
-        self.y = y
-
-        self.text_value = text_value
-
-    def draw(self):
-
-        text(
-            self.text_value,
-            self.x,
-            self.y
-        )
 
 # =========================================================
 # STATE MACHINE
-# =========================================================
-
-STATE_BOOT = 0
-STATE_IDLE = 1
-STATE_MENU = 2
-STATE_STATUS = 3
-
-_current_state = STATE_BOOT
-
-# =========================================================
-# SET STATE
 # =========================================================
 
 def set_state(state):
@@ -714,17 +1036,12 @@ def set_state(state):
 
     _current_state = state
 
-# =========================================================
-# UPDATE STATE
-# =========================================================
 
 def update_state():
 
     if _current_state == STATE_BOOT:
 
-        center(
-            DEVICE_NAME
-        )
+        show_boot_screen()
 
     elif _current_state == STATE_IDLE:
 
@@ -732,20 +1049,19 @@ def update_state():
 
     elif _current_state == STATE_MENU:
 
+        clear()
+
         center("MENU")
+
+        show()
 
     elif _current_state == STATE_STATUS:
 
-        cyberpunk_dashboard(
-            70,
-            50,
-            90
-        )
+        show_status_health(0)
 
-    show()
 
 # =========================================================
-# ASYNC FRIENDLY
+# ASYNC SUPPORT
 # =========================================================
 
 async def async_loading():
@@ -754,9 +1070,14 @@ async def async_loading():
 
     while True:
 
-        loading("ASYNC", 1)
+        clear()
+
+        center("ASYNC MODE")
+
+        show()
 
         await asyncio.sleep(1)
+
 
 # =========================================================
 # BACKGROUND TASK
@@ -766,14 +1087,24 @@ def background_worker():
 
     while True:
 
-        sleep_check()
+        try:
 
-        gc.collect()
+            sleep_check()
+
+            memory_maintenance()
+
+        except Exception as e:
+
+            print(
+                "BG ERROR:",
+                repr(e)
+            )
 
         time.sleep_ms(1000)
 
+
 # =========================================================
-# START BACKGROUND THREAD
+# START BACKGROUND
 # =========================================================
 
 def start_background():
@@ -791,67 +1122,6 @@ def start_background():
             "THREAD ERROR:",
             repr(e)
         )
-
-def show_status_info(
-    ssid,
-    password,
-    ip
-):
-
-    clear()
-
-    text("AP CONTROLLER", 0, 0)
-
-    text("SSID:", 0, 18)
-    text(ssid, 48, 18)
-
-    text("PASS:", 0, 34)
-    text(password, 48, 34)
-
-    text("IP:", 0, 50)
-    text(ip, 48, 50)
-
-    show()
-
-def show_status_health(node_count):
-
-    clear()
-
-    mem = gc.mem_free()
-
-    text("NODES:", 0, 10)
-    text(str(node_count), 70, 10)
-
-    text("FREE RAM:", 0, 30)
-    text(str(mem), 70, 30)
-
-    text("SYSTEM OK", 0, 50)
-
-    show()
-
-def show_clock():
-
-    rtc = machine.RTC()
-
-    dt = rtc.datetime()
-
-    hour = dt[4]
-    minute = dt[5]
-    second = dt[6]
-
-    clear()
-
-    center(
-        "{:02d}:{:02d}:{:02d}".format(
-            hour,
-            minute,
-            second
-        ),
-        24
-    )
-
-    show()
-
 
 
 # =========================================================
