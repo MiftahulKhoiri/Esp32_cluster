@@ -1,6 +1,29 @@
-# =========================
+# =========================================================
+# MAIN APPLICATION
+# File: main.py
+# =========================================================
+#
+# Production Ready
+# ESP32 + MicroPython
+# Access Point Controller
+#
+# Fitur:
+# - Hardware watchdog
+# - OLED screen manager
+# - Network maintenance
+# - RTC sync
+# - Memory protection
+# - Runtime recovery
+# - LED status
+# - Screen rotation
+# - Long runtime stability
+#
+# =========================================================
+
+
+# =========================================================
 # IMPORT
-# =========================
+# =========================================================
 
 import time
 import gc
@@ -18,11 +41,11 @@ from config import (
 
     CLOCK_REFRESH_INTERVAL,
     NODE_REFRESH_INTERVAL,
+
     DISPLAY_LOOP_DELAY,
 
     WATCHDOG_TIMEOUT,
     BOOT_DELAY
-
 )
 
 from ap_wifi import (
@@ -32,14 +55,16 @@ from ap_wifi import (
 
 from oled_display import (
 
-    init_display,
+    init,
+
     show_logo_animation,
     show_boot_screen,
 
     show_status_info,
     show_status_health,
-    show_clock
+    show_clock,
 
+    sleep_check
 )
 
 from network_monitor import (
@@ -51,37 +76,71 @@ from node_monitor import (
     get_node_count
 )
 
+
+# =========================================================
+# OPTIONAL LED MODULE
+# =========================================================
+
 try:
+
     import led_indicator as led
+
     LED_AVAILABLE = True
-except:
+
+except Exception as e:
+
+    print("LED module unavailable:", e)
+
     LED_AVAILABLE = False
 
 
-# =========================
+# =========================================================
 # WATCHDOG
-# =========================
+# =========================================================
 
-wdt = WDT(timeout=WATCHDOG_TIMEOUT)
+wdt = WDT(
+    timeout=WATCHDOG_TIMEOUT
+)
 
 
-# =========================
+# =========================================================
 # GLOBAL STATE
-# =========================
+# =========================================================
 
 _current_screen = "status_info"
 
 _screen_start_time = 0
 
 _last_clock_update = 0
+
 _last_node_update = 0
+
+_last_gc = 0
 
 _cached_node_count = 0
 
 
-# =========================
-# SCREEN SWITCH
-# =========================
+# =========================================================
+# SAFE LED CONTROL
+# =========================================================
+
+def set_led(state):
+
+    if not LED_AVAILABLE:
+        return
+
+    try:
+
+        led.set_state(state)
+
+    except Exception as e:
+
+        print("LED error:", e)
+
+
+# =========================================================
+# SCREEN SWITCHER
+# =========================================================
 
 def switch_screen():
 
@@ -95,31 +154,52 @@ def switch_screen():
         _screen_start_time
     )
 
+    # =====================================
+    # STATUS INFO -> STATUS HEALTH
+    # =====================================
+
     if _current_screen == "status_info":
 
-        if elapsed >= STATUS_INFO_DURATION * 1000:
+        if elapsed >= (
+            STATUS_INFO_DURATION * 1000
+        ):
 
             _current_screen = "status_health"
+
             _screen_start_time = now
+
+    # =====================================
+    # STATUS HEALTH -> CLOCK
+    # =====================================
 
     elif _current_screen == "status_health":
 
-        if elapsed >= STATUS_HEALTH_DURATION * 1000:
+        if elapsed >= (
+            STATUS_HEALTH_DURATION * 1000
+        ):
 
             _current_screen = "clock"
+
             _screen_start_time = now
+
+    # =====================================
+    # CLOCK -> STATUS INFO
+    # =====================================
 
     elif _current_screen == "clock":
 
-        if elapsed >= CLOCK_DISPLAY_DURATION * 1000:
+        if elapsed >= (
+            CLOCK_DISPLAY_DURATION * 1000
+        ):
 
             _current_screen = "status_info"
+
             _screen_start_time = now
 
 
-# =========================
+# =========================================================
 # UPDATE DISPLAY
-# =========================
+# =========================================================
 
 def update_display():
 
@@ -129,13 +209,14 @@ def update_display():
 
     now = time.ticks_ms()
 
+    # Update screen state
     switch_screen()
 
     try:
 
-        # =====================
+        # =================================
         # STATUS INFO
-        # =====================
+        # =================================
 
         if _current_screen == "status_info":
 
@@ -147,42 +228,64 @@ def update_display():
                 ip
             )
 
-        # =====================
+        # =================================
         # STATUS HEALTH
-        # =====================
+        # =================================
 
         elif _current_screen == "status_health":
 
+            # Refresh node count
             if time.ticks_diff(
                 now,
                 _last_node_update
-            ) >= NODE_REFRESH_INTERVAL * 1000:
+            ) >= (
+                NODE_REFRESH_INTERVAL * 1000
+            ):
 
-                _cached_node_count = get_node_count()
+                try:
+
+                    _cached_node_count = (
+                        get_node_count()
+                    )
+
+                except Exception as e:
+
+                    print(
+                        "Node count error:",
+                        e
+                    )
+
+                    _cached_node_count = 0
 
                 _last_node_update = now
 
+            # Render OLED
             show_status_health(
                 _cached_node_count
             )
 
-            if LED_AVAILABLE:
+            # LED indicator
+            if _cached_node_count > 0:
 
-                if _cached_node_count > 0:
-                    led.set_state("activity")
-                else:
-                    led.set_state("running")
+                set_led("activity")
 
-        # =====================
+            else:
+
+                set_led("running")
+
+        # =================================
         # CLOCK
-        # =====================
+        # =================================
 
         elif _current_screen == "clock":
 
+            # Clock selalu update
             if time.ticks_diff(
                 now,
                 _last_clock_update
-            ) >= CLOCK_REFRESH_INTERVAL * 1000:
+            ) >= (
+                CLOCK_REFRESH_INTERVAL * 1000
+            ):
 
                 show_clock()
 
@@ -190,130 +293,263 @@ def update_display():
 
     except Exception as e:
 
-        print("Display update error:", e)
+        print(
+            "Display update error:",
+            e
+        )
 
-        if LED_AVAILABLE:
-            led.set_state("error")
+        set_led("error")
 
 
-# =========================
-# MAIN
-# =========================
+# =========================================================
+# PERIODIC MEMORY CLEANER
+# =========================================================
 
-def main():
+def memory_maintenance():
 
-    global _screen_start_time
+    global _last_gc
 
-    print("Booting Access Point Controller")
+    now = time.ticks_ms()
 
-    try:
-
-        if LED_AVAILABLE:
-            led.set_state("boot")
-
-        wdt.feed()
-
-        # =====================
-        # INIT DISPLAY
-        # =====================
-
-        init_display()
-
-        wdt.feed()
-
-        # =====================
-        # LOGO
-        # =====================
-
-        show_logo_animation()
-
-        wdt.feed()
-
-        # =====================
-        # BOOT SCREEN
-        # =====================
-
-        show_boot_screen()
-
-        time.sleep(BOOT_DELAY)
-
-        if LED_AVAILABLE:
-            led.set_state("ap")
-
-        # =====================
-        # START NETWORK
-        # =====================
-
-        print("Starting network gateway")
-
-        gateway_ok = start_gateway()
-
-        wdt.feed()
-
-        # =====================
-        # INITIAL TIME SYNC
-        # =====================
-
-        try:
-
-            sync_time()
-
-        except Exception as e:
-
-            print("Initial NTP sync failed:", e)
-
-        # =====================
-        # MEMORY CLEAN
-        # =====================
+    # GC setiap 30 detik
+    if time.ticks_diff(
+        now,
+        _last_gc
+    ) >= 30000:
 
         gc.collect()
 
-        # =====================
-        # INIT TIMER
-        # =====================
+        _last_gc = now
 
-        _screen_start_time = time.ticks_ms()
 
-        if LED_AVAILABLE:
-            led.set_state("running")
+# =========================================================
+# BOOT SEQUENCE
+# =========================================================
 
-        print("System ready")
+def boot_sequence():
+
+    global _screen_start_time
+
+    print(
+        "Booting Access Point Controller"
+    )
+
+    set_led("boot")
+
+    # =====================================
+    # WATCHDOG
+    # =====================================
+
+    wdt.feed()
+
+    # =====================================
+    # OLED INIT
+    # =====================================
+
+    if not init():
+
+        print("OLED initialization failed")
+
+    wdt.feed()
+
+    # =====================================
+    # LOGO ANIMATION
+    # =====================================
+
+    try:
+
+        show_logo_animation()
 
     except Exception as e:
 
-        print("Boot error:", e)
+        print(
+            "Logo animation error:",
+            e
+        )
 
-        if LED_AVAILABLE:
-            led.set_state("error")
+    wdt.feed()
 
-    # =========================
-    # MAIN LOOP
-    # =========================
+    # =====================================
+    # BOOT SCREEN
+    # =====================================
+
+    try:
+
+        show_boot_screen()
+
+    except Exception as e:
+
+        print(
+            "Boot screen error:",
+            e
+        )
+
+    time.sleep(BOOT_DELAY)
+
+    set_led("ap")
+
+    # =====================================
+    # START NETWORK
+    # =====================================
+
+    print("Starting gateway")
+
+    gateway_ok = False
+
+    try:
+
+        gateway_ok = start_gateway()
+
+    except Exception as e:
+
+        print(
+            "Gateway start error:",
+            e
+        )
+
+    if gateway_ok:
+
+        print("Gateway started")
+
+    else:
+
+        print("Gateway failed")
+
+        set_led("error")
+
+    wdt.feed()
+
+    # =====================================
+    # INITIAL TIME SYNC
+    # =====================================
+
+    try:
+
+        sync_time()
+
+        print("NTP sync success")
+
+    except Exception as e:
+
+        print(
+            "Initial NTP sync failed:",
+            e
+        )
+
+    # =====================================
+    # MEMORY CLEANUP
+    # =====================================
+
+    gc.collect()
+
+    # =====================================
+    # INIT TIMER
+    # =====================================
+
+    _screen_start_time = (
+        time.ticks_ms()
+    )
+
+    set_led("running")
+
+    print("System ready")
+
+
+# =========================================================
+# MAIN LOOP
+# =========================================================
+
+def run():
 
     while True:
 
         try:
 
+            # =============================
+            # UPDATE OLED
+            # =============================
+
             update_display()
 
-            # network watchdog
+            # =============================
+            # NETWORK MAINTENANCE
+            # =============================
+
             network_maintenance()
 
-            # hardware watchdog
+            # =============================
+            # OLED AUTO SLEEP
+            # =============================
+
+            sleep_check()
+
+            # =============================
+            # MEMORY MAINTENANCE
+            # =============================
+
+            memory_maintenance()
+
+            # =============================
+            # WATCHDOG FEED
+            # =============================
+
             wdt.feed()
 
         except Exception as e:
 
-            print("Main loop error:", e)
+            print(
+                "Main loop error:",
+                e
+            )
 
-            if LED_AVAILABLE:
-                led.set_state("error")
+            set_led("error")
 
-        time.sleep(DISPLAY_LOOP_DELAY)
+            gc.collect()
+
+        # =============================
+        # LOOP DELAY
+        # =============================
+
+        time.sleep(
+            DISPLAY_LOOP_DELAY
+        )
 
 
-# =========================
-# START
-# =========================
+# =========================================================
+# MAIN ENTRY
+# =========================================================
+
+def main():
+
+    try:
+
+        boot_sequence()
+
+        run()
+
+    except Exception as e:
+
+        print(
+            "Fatal system error:",
+            e
+        )
+
+        set_led("error")
+
+        while True:
+
+            try:
+
+                wdt.feed()
+
+            except:
+                pass
+
+            time.sleep(1)
+
+
+# =========================================================
+# START SYSTEM
+# =========================================================
 
 main()
