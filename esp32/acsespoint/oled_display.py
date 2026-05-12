@@ -792,6 +792,68 @@ def start_background():
             repr(e)
         )
 
+def show_status_info(
+    ssid,
+    password,
+    ip
+):
+
+    clear()
+
+    text("AP CONTROLLER", 0, 0)
+
+    text("SSID:", 0, 18)
+    text(ssid, 48, 18)
+
+    text("PASS:", 0, 34)
+    text(password, 48, 34)
+
+    text("IP:", 0, 50)
+    text(ip, 48, 50)
+
+    show()
+
+def show_status_health(node_count):
+
+    clear()
+
+    mem = gc.mem_free()
+
+    text("NODES:", 0, 10)
+    text(str(node_count), 70, 10)
+
+    text("FREE RAM:", 0, 30)
+    text(str(mem), 70, 30)
+
+    text("SYSTEM OK", 0, 50)
+
+    show()
+
+def show_clock():
+
+    rtc = machine.RTC()
+
+    dt = rtc.datetime()
+
+    hour = dt[4]
+    minute = dt[5]
+    second = dt[6]
+
+    clear()
+
+    center(
+        "{:02d}:{:02d}:{:02d}".format(
+            hour,
+            minute,
+            second
+        ),
+        24
+    )
+
+    show()
+
+
+
 # =========================================================
 # AUTO START
 # =========================================================
