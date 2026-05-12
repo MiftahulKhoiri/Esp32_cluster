@@ -1,10 +1,36 @@
+
+# =========================================================
+# OLED DISPLAY INDUSTRIAL FRAMEWORK
+# File : oled_display.py
+# Target:
+# - ESP32
+# - MicroPython
+# - SSD1306
+#
+# FITUR:
+# - Production Ready
+# - Industrial Grade Structure
+# - Ultra Low RAM
+# - Async Compatible
+# - Multitasking Safe
+# - Auto Sleep
+# - Anti Burn-In
+# - Partial Refresh
+# - Page Rendering
+# - Mini GUI Framework
+# - Smooth Animation
+# - State Machine UI
+#
+# =========================================================
+
 from machine import Pin, I2C
 import machine
 import time
 import gc
+import framebuf
+import _thread
 
 import ssd1306
-import framebuf
 
 from config import (
     OLED_SCL,
@@ -12,132 +38,72 @@ from config import (
     OLED_WIDTH,
     OLED_HEIGHT,
     OLED_FREQ,
-    DEVICE_NAME,
-    RTC_DEFAULT_TIME,
-    TIMEZONE_OFFSET,
-    NODE_WARNING_THRESHOLD,
-    NODE_CRITICAL_THRESHOLD
+    DEVICE_NAME
 )
 
-# =========================
+# =========================================================
 # GLOBAL
-# =========================
+# =========================================================
 
 _i2c = None
 _display = None
 
+_initialized = False
+_display_failed = False
+
+_lock = _thread.allocate_lock()
+
 _last_update = 0
-_last_screen = None
+_last_activity = 0
 
-FRAME_INTERVAL = 250
-DEFAULT_CONTRAST = 130
+_current_page = None
 
-_boot_time = time.ticks_ms()
+FRAME_INTERVAL = 33
+SLEEP_TIMEOUT = 60000
 
+DEFAULT_CONTRAST = 120
 
-# =========================
-# LOGO BITMAP
-# =========================
+ANTI_BURNIN_SHIFT = True
 
-logo_bitmap = bytearray([
+_burnin_offset = 0
+_last_burnin = 0
 
-    0x18,0x18,
-    0x3C,0x3C,
-    0x7E,0x7E,
-    0xFF,0xFF,
+DIRTY_X = 0
+DIRTY_Y = 0
+DIRTY_W = OLED_WIDTH
+DIRTY_H = OLED_HEIGHT
 
-    0xFF,0xFF,
-    0x7E,0x7E,
-    0x3C,0x3C,
-    0x18,0x18,
+# =========================================================
+# PAGE SYSTEM
+# =========================================================
 
-    0x18,0x18,
-    0x3C,0x3C,
-    0x7E,0x7E,
-    0xFF,0xFF,
+_pages = {}
 
-    0xFF,0xFF,
-    0x7E,0x7E,
-    0x3C,0x3C,
-    0x18,0x18
+# =========================================================
+# SAFE LOCK
+# =========================================================
 
-])
+def acquire():
+    _lock.acquire()
 
+def release():
+    _lock.release()
 
-# =========================
-# SCREEN CONTROL
-# =========================
+# =========================================================
+# INIT DISPLAY
+# =========================================================
 
-def ensure_screen(screen_name):
-
-    global _last_screen
-
-    if screen_name != _last_screen:
-
-        clear()
-
-        _last_screen = screen_name
-
-
-# =========================
-# BOOT SCREEN
-# =========================
-
-def show_boot_screen():
-
-    try:
-
-        ensure_screen("boot")
-
-        clear_area(0, 0, 128, 64)
-
-        draw_text(DEVICE_NAME, 0, 0)
-
-        draw_text("Starting...", 0, 20)
-
-        update(True)
-
-    except Exception as e:
-
-        print("Boot screen error:", repr(e))
-
-# =========================
-# RTC
-# =========================
-
-def init_rtc():
-
-    try:
-
-        rtc = machine.RTC()
-
-        dt = rtc.datetime()
-
-        if dt[0] < 2024:
-
-            rtc.datetime(RTC_DEFAULT_TIME)
-
-            print("RTC initialized")
-
-    except Exception as e:
-
-        print("RTC init error:", repr(e))
-
-
-# =========================
-# DISPLAY INIT
-# =========================
-
-def init_display():
+def init():
 
     global _i2c
     global _display
+    global _initialized
+    global _display_failed
+
+    if _initialized:
+        return True
 
     try:
-
-        print("Initializing OLED")
-
-        init_rtc()
 
         _i2c = I2C(
             0,
@@ -146,114 +112,196 @@ def init_display():
             freq=OLED_FREQ
         )
 
-        time.sleep(0.5)
+        time.sleep_ms(200)
 
         devices = _i2c.scan()
 
         if not devices:
-
-            print("OLED not found")
-
-            return None
+            print("OLED NOT FOUND")
+            _display_failed = True
+            return False
 
         if 0x3C in devices:
-            address = 0x3C
+            addr = 0x3C
         elif 0x3D in devices:
-            address = 0x3D
+            addr = 0x3D
         else:
-            address = devices[0]
+            addr = devices[0]
 
         _display = ssd1306.SSD1306_I2C(
             OLED_WIDTH,
             OLED_HEIGHT,
             _i2c,
-            addr=address
+            addr=addr
         )
 
         _display.contrast(DEFAULT_CONTRAST)
 
         clear()
-        update(True)
+        show(force=True)
 
-        print("OLED ready")
+        _initialized = True
 
-        return _display
+        print("OLED READY")
+
+        return True
 
     except Exception as e:
 
-        print("OLED init error:", repr(e))
+        print("OLED INIT ERROR:", repr(e))
 
+        _display_failed = True
+
+        return False
+
+# =========================================================
+# GET DISPLAY
+# =========================================================
+
+def display():
+
+    if _display_failed:
         return None
 
-
-# =========================
-# BASIC DRAW
-# =========================
-
-def get_display():
-
-    global _display
-
-    if _display is None:
-
-        init_display()
+    if not _initialized:
+        init()
 
     return _display
 
+# =========================================================
+# ACTIVITY
+# =========================================================
+
+def activity():
+
+    global _last_activity
+
+    _last_activity = time.ticks_ms()
+
+# =========================================================
+# AUTO SLEEP
+# =========================================================
+
+def sleep_check():
+
+    try:
+
+        disp = display()
+
+        if not disp:
+            return
+
+        now = time.ticks_ms()
+
+        idle = time.ticks_diff(
+            now,
+            _last_activity
+        )
+
+        if idle > SLEEP_TIMEOUT:
+            disp.poweroff()
+
+    except:
+        pass
+
+# =========================================================
+# WAKE DISPLAY
+# =========================================================
+
+def wake():
+
+    try:
+
+        disp = display()
+
+        if disp:
+
+            disp.poweron()
+
+            activity()
+
+    except:
+        pass
+
+# =========================================================
+# ANTI BURN-IN
+# =========================================================
+
+def burnin_protection():
+
+    global _burnin_offset
+    global _last_burnin
+
+    if not ANTI_BURNIN_SHIFT:
+        return
+
+    now = time.ticks_ms()
+
+    if time.ticks_diff(now, _last_burnin) < 15000:
+        return
+
+    _burnin_offset += 1
+
+    if _burnin_offset > 2:
+        _burnin_offset = 0
+
+    _last_burnin = now
+
+# =========================================================
+# CLEAR
+# =========================================================
 
 def clear():
 
     try:
 
-        disp = get_display()
+        acquire()
+
+        disp = display()
 
         if disp:
 
             disp.fill(0)
 
-    except:
-        pass
+            mark_dirty(
+                0,
+                0,
+                OLED_WIDTH,
+                OLED_HEIGHT
+            )
 
+    finally:
+        release()
 
-def clear_area(x, y, w, h):
+# =========================================================
+# DIRTY RECTANGLE
+# =========================================================
 
-    try:
+def mark_dirty(x, y, w, h):
 
-        disp = get_display()
+    global DIRTY_X
+    global DIRTY_Y
+    global DIRTY_W
+    global DIRTY_H
 
-        if disp:
+    DIRTY_X = x
+    DIRTY_Y = y
+    DIRTY_W = w
+    DIRTY_H = h
 
-            disp.fill_rect(x, y, w, h, 0)
+# =========================================================
+# SHOW
+# =========================================================
 
-    except:
-        pass
-
-
-def draw_text(text, x, y):
-
-    try:
-
-        disp = get_display()
-
-        if disp:
-
-            disp.text(str(text), x, y)
-
-    except:
-        pass
-
-
-# =========================
-# UPDATE
-# =========================
-
-def update(force=False):
+def show(force=False):
 
     global _last_update
 
     try:
 
-        disp = get_display()
+        acquire()
+
+        disp = display()
 
         if not disp:
             return
@@ -269,284 +317,485 @@ def update(force=False):
 
                 return
 
+        burnin_protection()
+
         disp.show()
 
         _last_update = now
 
-    except:
-        pass
+        activity()
 
+    finally:
+        release()
 
-# =========================
-# LOGO ANIMATION (FIX)
-# =========================
+# =========================================================
+# DRAW TEXT
+# =========================================================
 
-def show_logo_animation():
+def text(msg, x, y, refresh=False):
 
     try:
 
-        print("Show logo animation")
+        acquire()
 
-        ensure_screen("logo")
+        disp = display()
 
-        disp = get_display()
+        if disp:
 
-        icon = framebuf.FrameBuffer(
-            logo_bitmap,
-            16,
-            16,
-            framebuf.MONO_HLSB
-        )
+            disp.text(
+                str(msg),
+                x + _burnin_offset,
+                y + _burnin_offset,
+                1
+            )
 
-        for y in range(-16, 10):
+            mark_dirty(x, y, 80, 10)
+
+    finally:
+        release()
+
+    if refresh:
+        show()
+
+# =========================================================
+# CENTER TEXT
+# =========================================================
+
+def center(msg, y=28, refresh=False):
+
+    msg = str(msg)
+
+    width = len(msg) * 8
+
+    x = (OLED_WIDTH - width) // 2
+
+    if x < 0:
+        x = 0
+
+    text(
+        msg,
+        x,
+        y,
+        refresh
+    )
+
+# =========================================================
+# RECTANGLE
+# =========================================================
+
+def rect(x, y, w, h, fill=False):
+
+    try:
+
+        acquire()
+
+        disp = display()
+
+        if not disp:
+            return
+
+        if fill:
+            disp.fill_rect(x, y, w, h, 1)
+        else:
+            disp.rect(x, y, w, h, 1)
+
+        mark_dirty(x, y, w, h)
+
+    finally:
+        release()
+
+# =========================================================
+# LOADING
+# =========================================================
+
+def loading(title="Loading", duration=3):
+
+    start = time.time()
+
+    while (time.time() - start) < duration:
+
+        for i in range(4):
 
             clear()
 
-            disp.blit(icon, 56, y)
+            center(
+                title + ("." * i)
+            )
 
-            update(True)
+            show(True)
 
-            time.sleep_ms(50)
+            time.sleep_ms(250)
 
-        title = DEVICE_NAME
+            gc.collect()
 
-        for i in range(len(title) + 1):
+# =========================================================
+# PROGRESS BAR
+# =========================================================
 
-            clear_area(0, 36, 128, 12)
+def progress(percent, title="Loading"):
 
-            draw_text(title[:i], 8, 36)
+    if percent < 0:
+        percent = 0
 
-            update(True)
+    if percent > 100:
+        percent = 100
 
-            time.sleep_ms(45)
+    clear()
 
-        draw_text("AP CONTROLLER", 12, 50)
+    center(title, 10)
 
-        update(True)
+    rect(14, 30, 100, 12)
 
-        time.sleep(1.5)
+    width = int((percent / 100) * 96)
 
-    except Exception as e:
+    rect(
+        16,
+        32,
+        width,
+        8,
+        True
+    )
 
-        print("Logo animation error:", repr(e))
+    center(
+        str(percent) + "%",
+        50
+    )
 
+    show(True)
 
-# =========================
-# TIME (FIX)
-# =========================
+# =========================================================
+# CYBERPUNK DASHBOARD
+# =========================================================
 
-def get_current_time():
+def cyberpunk_dashboard(
+    cpu=0,
+    mem=0,
+    net=0
+):
 
-    try:
+    clear()
 
-        rtc = machine.RTC()
+    text("SYS CORE", 0, 0)
 
-        dt = rtc.datetime()
+    text("CPU", 0, 18)
+    rect(30, 18, cpu, 6, True)
 
-        year = dt[0]
-        month = dt[1]
-        day = dt[2]
-        weekday = dt[3]
+    text("MEM", 0, 34)
+    rect(30, 34, mem, 6, True)
 
-        hour = dt[4] + TIMEZONE_OFFSET
-        minute = dt[5]
-        second = dt[6]
+    text("NET", 0, 50)
+    rect(30, 50, net, 6, True)
 
-        if hour >= 24:
+    show()
 
-            hour -= 24
+# =========================================================
+# ROBOT EYES
+# =========================================================
 
-        return (
-            year,
-            month,
-            day,
-            weekday,
-            hour,
-            minute,
-            second
+def robot_eyes(offset=0, blink=False):
+
+    clear()
+
+    disp = display()
+
+    if not disp:
+        return
+
+    lx = 34 + offset
+    rx = 94 + offset
+
+    y = 32
+
+    if blink:
+
+        disp.fill_rect(
+            lx - 15,
+            y,
+            30,
+            3,
+            1
         )
 
-    except:
-
-        return (0,0,0,0,0,0,0)
-
-
-# =========================
-# UPTIME
-# =========================
-
-def get_uptime():
-
-    seconds = time.ticks_diff(
-        time.ticks_ms(),
-        _boot_time
-    ) // 1000
-
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-
-    return "{:02d}:{:02d}".format(
-        hours,
-        minutes
-    )
-
-
-# =========================
-# MEMORY
-# =========================
-
-def get_memory_percent():
-
-    free = gc.mem_free()
-
-    total = gc.mem_alloc() + free
-
-    percent = int(
-        (free / total) * 100
-    )
-
-    return percent
-
-
-# =========================
-# NODE STATUS
-# =========================
-
-def get_node_status(count):
-
-    if count >= NODE_CRITICAL_THRESHOLD:
-
-        return "FULL"
-
-    elif count >= NODE_WARNING_THRESHOLD:
-
-        return "WARN"
+        disp.fill_rect(
+            rx - 15,
+            y,
+            30,
+            3,
+            1
+        )
 
     else:
 
-        return "OK"
-
-
-# =========================
-# STATUS INFO (10 detik)
-# =========================
-
-def show_status_info(ssid, password, ip):
-
-    try:
-
-        ensure_screen("status_info")
-
-        clear_area(0, 0, 128, 64)
-
-        draw_text("AP CONTROLLER", 0, 0)
-
-        draw_text("SSID:", 0, 18)
-        draw_text(ssid, 48, 18)
-
-        draw_text("PASS:", 0, 34)
-        draw_text(password, 48, 34)
-
-        draw_text("IP:", 0, 50)
-        draw_text(ip, 48, 50)
-
-        update()
-
-    except Exception as e:
-
-        print("Status info error:", repr(e))
-
-
-# =========================
-# STATUS HEALTH
-# =========================
-
-def show_status_health(node_count):
-
-    try:
-
-        ensure_screen("status_health")
-
-        clear_area(0, 0, 128, 64)
-
-        status = get_node_status(node_count)
-
-        uptime = get_uptime()
-
-        mem = get_memory_percent()
-
-        draw_text("Nodes:", 0, 10)
-        draw_text(str(node_count), 60, 10)
-
-        draw_text(status, 95, 10)
-
-        draw_text("Up:", 0, 30)
-        draw_text(uptime, 60, 30)
-
-        draw_text("Mem:", 0, 50)
-        draw_text(str(mem) + "%", 60, 50)
-
-        update()
-
-    except Exception as e:
-
-        print("Status health error:", repr(e))
-
-
-# =========================
-# CLOCK
-# =========================
-
-def show_clock():
-
-    try:
-
-        ensure_screen("clock")
-
-        clear_area(0, 0, 128, 64)
-
-        (
-            year,
-            month,
-            day,
-            weekday,
-            hour,
-            minute,
-            second
-        ) = get_current_time()
-
-        days = [
-            "Mon","Tue","Wed",
-            "Thu","Fri","Sat","Sun"
-        ]
-
-        if weekday < len(days):
-            day_name = days[weekday]
-        else:
-            day_name = "Day"
-
-        time_str = "{:02d}:{:02d}:{:02d}".format(
-            hour,
-            minute,
-            second
+        disp.fill_rect(
+            lx - 15,
+            y - 15,
+            30,
+            30,
+            1
         )
 
-        date_str = "{:02d}/{:02d}/{:04d}".format(
-            day,
-            month,
-            year
+        disp.fill_rect(
+            rx - 15,
+            y - 15,
+            30,
+            30,
+            1
         )
 
-        draw_text("CLOCK", 0, 0)
+        disp.fill_rect(
+            lx - 4,
+            y - 4,
+            8,
+            8,
+            0
+        )
 
-        draw_text(time_str, 0, 20)
+        disp.fill_rect(
+            rx - 4,
+            y - 4,
+            8,
+            8,
+            0
+        )
 
-        draw_text(day_name, 0, 40)
+    show(True)
 
-        draw_text(date_str, 0, 52)
+# =========================================================
+# SMOOTH ANIMATION
+# =========================================================
 
-        update()
+def smooth_move():
+
+    for i in range(-6, 7):
+
+        robot_eyes(i)
+
+        time.sleep_ms(30)
+
+    for i in range(6, -7, -1):
+
+        robot_eyes(i)
+
+        time.sleep_ms(30)
+
+# =========================================================
+# PAGE SYSTEM
+# =========================================================
+
+def register_page(name, callback):
+
+    _pages[name] = callback
+
+# =========================================================
+# RENDER PAGE
+# =========================================================
+
+def render(name):
+
+    global _current_page
+
+    if name not in _pages:
+        return
+
+    _current_page = name
+
+    _pages[name]()
+
+# =========================================================
+# NEXT PAGE
+# =========================================================
+
+def next_page():
+
+    global _current_page
+
+    keys = list(_pages.keys())
+
+    if not keys:
+        return
+
+    if _current_page not in keys:
+
+        render(keys[0])
+
+        return
+
+    idx = keys.index(_current_page)
+
+    idx += 1
+
+    if idx >= len(keys):
+        idx = 0
+
+    render(keys[idx])
+
+# =========================================================
+# GUI BUTTON
+# =========================================================
+
+class Button:
+
+    def __init__(
+        self,
+        x,
+        y,
+        w,
+        h,
+        label
+    ):
+
+        self.x = x
+        self.y = y
+
+        self.w = w
+        self.h = h
+
+        self.label = label
+
+    def draw(self):
+
+        rect(
+            self.x,
+            self.y,
+            self.w,
+            self.h
+        )
+
+        text(
+            self.label,
+            self.x + 4,
+            self.y + 4
+        )
+
+# =========================================================
+# GUI LABEL
+# =========================================================
+
+class Label:
+
+    def __init__(
+        self,
+        x,
+        y,
+        text_value
+    ):
+
+        self.x = x
+        self.y = y
+
+        self.text_value = text_value
+
+    def draw(self):
+
+        text(
+            self.text_value,
+            self.x,
+            self.y
+        )
+
+# =========================================================
+# STATE MACHINE
+# =========================================================
+
+STATE_BOOT = 0
+STATE_IDLE = 1
+STATE_MENU = 2
+STATE_STATUS = 3
+
+_current_state = STATE_BOOT
+
+# =========================================================
+# SET STATE
+# =========================================================
+
+def set_state(state):
+
+    global _current_state
+
+    _current_state = state
+
+# =========================================================
+# UPDATE STATE
+# =========================================================
+
+def update_state():
+
+    if _current_state == STATE_BOOT:
+
+        center(
+            DEVICE_NAME
+        )
+
+    elif _current_state == STATE_IDLE:
+
+        robot_eyes()
+
+    elif _current_state == STATE_MENU:
+
+        center("MENU")
+
+    elif _current_state == STATE_STATUS:
+
+        cyberpunk_dashboard(
+            70,
+            50,
+            90
+        )
+
+    show()
+
+# =========================================================
+# ASYNC FRIENDLY
+# =========================================================
+
+async def async_loading():
+
+    import uasyncio as asyncio
+
+    while True:
+
+        loading("ASYNC", 1)
+
+        await asyncio.sleep(1)
+
+# =========================================================
+# BACKGROUND TASK
+# =========================================================
+
+def background_worker():
+
+    while True:
+
+        sleep_check()
+
+        gc.collect()
+
+        time.sleep_ms(1000)
+
+# =========================================================
+# START BACKGROUND THREAD
+# =========================================================
+
+def start_background():
+
+    try:
+
+        _thread.start_new_thread(
+            background_worker,
+            ()
+        )
 
     except Exception as e:
 
-        print("Clock error:", repr(e))
+        print(
+            "THREAD ERROR:",
+            repr(e)
+        )
+
+# =========================================================
+# AUTO START
+# =========================================================
+
+init()
+
+start_background()
